@@ -8,6 +8,8 @@ setup_xcconfig_env() {
     export VERSIONING_SYSTEM="apple-generic"
     export TARGETED_DEVICE_FAMILY="1,2"
     export IPHONEOS_DEPLOYMENT_TARGET="12"
+    export MACOSX_DEPLOYMENT_TARGET="10.2"
+    export MACOS_DEPLOYMENT_TARGET="10.2"
     export DYLIB_COMPATIBILITY_VERSION="1"
     export DYLIB_CURRENT_VERSION="1"
     export DYLIB_INSTALL_NAME_BASE="@rpath"
