@@ -106,7 +106,7 @@ async function main() {
                    value: "event_name"
                }]
            },
-           expression: 'platform.daysSinceEvent("test") == user.some_value'
+           expression: 'computed.daysSinceEvent("test") == user.some_value'
        };
 
        const inputJson = JSON.stringify(input);
