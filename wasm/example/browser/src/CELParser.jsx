@@ -1,6 +1,6 @@
 import React, {useState, useCallback, useEffect, useRef} from 'react';
 import {JsonEditor} from 'json-edit-react';
-import * as wasm from 'supercel-wasm';
+import * as wasm from 'superscript';
 import Split from "react-split";
 import Editor from "@monaco-editor/react";
 

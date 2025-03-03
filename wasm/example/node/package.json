@@ -1,0 +1,13 @@
+{
+  "name": "example",
+  "version": "0.1.0",
+  "homepage": "https://superwall.github.io/superscript",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "superscript": "file:../../target/node"
+  },
+  "scripts": {
+    "predeploy": "npm run build"
+  }
+}

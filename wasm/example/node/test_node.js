@@ -1,4 +1,4 @@
-import *  as wasm from "../target/node/supercel_wasm";
+import * as wasm from "superscript";
 
 
 /**
@@ -76,13 +76,19 @@ async function main() {
                     }
                 }
             },
-            platform: {
+            device: {
                 daysSinceEvent: [{
                     type: "string",
                     value: "event_name"
                 }]
             },
-            expression: 'platform.daysSinceEvent("test") == user.some_value'
+            computed: {
+                daysSinceEvent: [{
+                    type: "string",
+                    value: "event_name"
+                }]
+            },
+            expression: 'device.daysSinceEvent("test") == user.some_value'
         };
 
         const inputJson = JSON.stringify(input);
