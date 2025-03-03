@@ -1,6 +1,7 @@
 # Supercel WASM Module
 
-This project demonstrates how to use WebAssembly (WASM) with Rust and JavaScript to create a dynamic expression evaluator. The evaluator can call host environment functions and compute dynamic properties.
+This is the JS (WASM) runner for [Superscript expression language](https://github.com/superwall/Superscript).
+The evaluator can call host environment functions and compute dynamic properties while evaluating expressions.
 
 ## Getting Started
 
@@ -13,36 +14,103 @@ This project demonstrates how to use WebAssembly (WASM) with Rust and JavaScript
 
 
 ### Setup
-- Install the prerequisites
-- Run `rustup target add wasm32-unknown-unknown` to add the WASM target
 
-### Building the Project
+First, import the module:
+`import * as wasm from "@superwall/superscript";`
 
-To build the project, you need to:
+Next, create a WasmHostContext class to allow the expression evaluator to call the host environment (your JS)
+and compute the dynamic properties, i.e. `platform.daysSinceEvent("event_name")`.
+```javascript
+/**
+* @param name - The name of the computed property or function being invoked.
+* @param args - JSON string of the arguments for the function.
+* @returns JSON-serialized string of the computed property value.
+* */
+class WasmHostContext {
+  computed_property(name, args) {
+        console.log(`computed_property called with name: ${name}, args: ${args}`);
+        const parsedArgs = JSON.parse(args);
+        if (name === "daysSinceEvent") {
+            let toReturn =  JSON.stringify({
+                  type: "uint",
+                  value: 7
+            });
+            console.log("Computed property will return", toReturn);
+            return toReturn
+        }
+        console.error("Computed property not defined")
+        return JSON.stringify({
+                type: "string",
+                value: `Computed property ${name} with args ${args}`
+        });
+  }
 
-- Run `./build_wasm.sh`
-
-**OR**
-
-- Build the WASM project for the first time: `cargo build --lib --target wasm32-unknown-unknown`
-
-Then use:
-```bash
-npm run build
+  device_property(name, args) {
+      console.log(`computed_property called with name: ${name}, args: ${args}`);
+      const parsedArgs = JSON.parse(args);
+      if (name === "daysSinceEvent") {
+         let toReturn =  JSON.stringify({
+                      type: "uint",
+                      value: 7
+                   });
+          console.log("Computed property will return", toReturn);
+          return toReturn
+      }
+      console.error("Computed property not defined")
+      return JSON.stringify({
+          type: "string",
+          value: `Computed property ${name} with args ${args}`
+      });
+  }
+}
 ```
 
-This will generate targets in the `.target/` directory
-* `./target/browser` for browser environments
-* `./target/node` for Node.js environments
 
+Then create an instance of the `WasmHostContext` and provide it together with the arguments to
+`wasm.evaluateWithContext(arguments, wasmHostContext)`.
 
-### Running the Project
+```javascript
+async function main() {
+       const context = new WasmHostContext();
 
-For **browsers**:
+       const input = {
+           //Available variables
+           variables: {
+               map: {
+                   user: {
+                       type: "map",
+                       value: {
+                           should_display: {
+                               type: "bool",
+                               value: true
+                           },
+                           some_value: {
+                               type: "uint",
+                               value: 7
+                           }
+                       }
+                   }
+               }
+           },
+           computed: {
+               //Computed values definitions
+               daysSinceEvent: [{
+                   type: "string",
+                   value: "event_name"
+               }]
+           },
+           device: {
+               //Device value definitions
+               daysSinceEvent: [{
+                   type: "string",
+                   value: "event_name"
+               }]
+           },
+           expression: 'platform.daysSinceEvent("test") == user.some_value'
+       };
 
-- Open `./example/browser/` and run `npm install ../../target/browser && npm run start`
-
-For **node**:
-- Open `./example/` and run `node test_node.js`
-
+       const inputJson = JSON.stringify(input);
+       const result = await wasm.evaluate_with_context(inputJson, context);
+}
+```
 

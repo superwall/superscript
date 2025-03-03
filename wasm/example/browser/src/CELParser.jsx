@@ -22,13 +22,19 @@ const initialJson = {
             }
         }
     },
-    platform: {
+    device: {
         daysSinceEvent: [{
             type: "string",
             value: "event_name"
         }]
     },
-    expression: 'platform.daysSinceEvent("test") == user.some_value'
+    computed: {
+        daysSinceEvent: [{
+            type: "string",
+            value: "event_name"
+        }]
+    },
+    expression: 'device.daysSinceEvent("test") == user.some_value'
 };
 
 const defaultPlatformCode = `/**
@@ -41,24 +47,43 @@ const defaultPlatformCode = `/**
  * @returns JSON-serialized string of the computed property value.
  * */
 class WasmHostContext {
-    computed_property(name, args) {
-        console.log(\`computed_property called with name: \${name}, args: $\{args}\`);
+  computed_property(name, args) {
+        console.log(\`computed_property called with name: \${name}, args: \${args}\`);
         const parsedArgs = JSON.parse(args);
         if (name === "daysSinceEvent") {
             let toReturn =  JSON.stringify({
-                type: "uint",
-                value: 7
+                  type: "uint",
+                  value: 7
             });
             console.log("Computed property will return", toReturn);
             return toReturn
         }
         console.error("Computed property not defined")
         return JSON.stringify({
-            type: "string",
-            value: \`Computed property \${name} with args \${args}\`
+                type: "string",
+                value: \`Computed property \${name} with args \${args}\`
         });
-    }
-}`;
+  }
+
+  device_property(name, args) {
+      console.log(\`computed_property called with name: \${name}, args: \${args}\`);
+      const parsedArgs = JSON.parse(args);
+      if (name === "daysSinceEvent") {
+         let toReturn =  JSON.stringify({
+                      type: "uint",
+                      value: 7
+                   });
+          console.log("Computed property will return", toReturn);
+          return toReturn
+      }
+      console.error("Computed property not defined")
+      return JSON.stringify({
+          type: "string",
+          value: \`Computed property \${name} with args \${args}\`
+      });
+  }
+}
+`;
 
 const CelParserComponent = () => {
 

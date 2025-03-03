@@ -1,4 +1,6 @@
 {
+  "name": "@superwall/superscript",
+  "version": "0.1.19",
   "scripts": {
     "build:browser": "rm -rf target/browser && webpack --config webpack.browser.js",
     "build:node": "rm -rf target/node && wasm-pack build --target nodejs --out-dir ./target/node",

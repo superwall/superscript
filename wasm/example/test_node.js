@@ -28,6 +28,25 @@ class WasmHostContext {
             value: `Computed property ${name} with args ${args}`
         });
     }
+
+    device_property(name, args) {
+        console.log(`computed_property called with name: ${name}, args: ${args}`);
+        const parsedArgs = JSON.parse(args);
+        if (name === "daysSinceEvent") {
+            let toReturn =  JSON.stringify({
+                type: "uint",
+                value: 7
+            });
+            console.log("Computed property will return", toReturn);
+            return toReturn
+        }
+        console.error("Computed property not defined")
+        return JSON.stringify({
+            type: "string",
+            value: `Computed property ${name} with args ${args}`
+        });
+    }
+
 }
 
 /**

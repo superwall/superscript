@@ -1,6 +1,6 @@
 [package]
-name = "supercel-wasm"
-version = "0.1.0"
+name = "superscript"
+version = "0.1.19"
 edition = "2021"
 publish = false
 
