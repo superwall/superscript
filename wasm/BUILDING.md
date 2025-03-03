@@ -1,9 +1,17 @@
-# Supercel WASM Module
+# Superscript WASM Module
 
 This is (WASM) runner for Superscript expression language.
 The evaluator can call host environment functions and compute dynamic properties.
 
 ## Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/)
+- [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
+- [Cargo & Rust](https://www.rust-lang.org/tools/install)
+- [wasm-pack](https://github.com/rustwasm/wasm-pack/)
+
 
 ### Setup
 - Install the prerequisites
