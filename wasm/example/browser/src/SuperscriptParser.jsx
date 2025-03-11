@@ -1,8 +1,176 @@
-import React, {useState, useCallback, useEffect, useRef} from 'react';
+import {useState, useEffect, useRef} from 'react';
 import {JsonEditor} from 'json-edit-react';
-import * as wasm from '@superwall/superscript';
+import * as wasm from '@superwall/superscript/browser';
 import Split from "react-split";
 import Editor from "@monaco-editor/react";
+
+const styles = {
+    container: {
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        backgroundColor: '#0A192F',
+        color: '#E6F1FF',
+    },
+    toolbar: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '10px 20px',
+        backgroundColor: '#172A45',
+        borderBottom: '1px solid #2D3B4F',
+    },
+    title: {
+        fontSize: '24px',
+        fontWeight: 'bold',
+        margin: 0,
+        color: '#64FFDA',
+    },
+    errorToast: {
+        display: 'flex',
+        alignItems: 'center',
+        backgroundColor: '#FF5555',
+        color: 'white',
+        padding: '10px 20px',
+        borderRadius: '4px',
+        margin: '10px 20px',
+        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
+        animation: 'slideIn 0.3s ease-out, shake 0.5s ease-in-out 0.3s',
+    },
+    errorIcon: {
+        marginRight: '10px',
+        fontSize: '20px',
+    },
+    errorMessage: {
+        flexGrow: 1,
+        fontWeight: 'bold',
+    },
+    errorCloseButton: {
+        background: 'none',
+        border: 'none',
+        color: 'white',
+        fontSize: '20px',
+        cursor: 'pointer',
+        padding: '0 5px',
+    },
+    button: {
+        backgroundColor: '#64FFDA',
+        border: 'none',
+        color: '#0A192F',
+        padding: '10px 20px',
+        textAlign: 'center',
+        textDecoration: 'none',
+        display: 'inline-block',
+        fontSize: '16px',
+        margin: '4px 2px',
+        cursor: 'pointer',
+        borderRadius: '4px',
+        transition: 'background-color 0.3s ease',
+    },
+    splitContainer: {
+        display: 'flex',
+        flexGrow: 1,
+    },
+    pane: {
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '20px',
+        overflow: 'auto',
+        backgroundColor: '#1E2A3A',
+    },
+    paneTitle: {
+        fontSize: '18px',
+        fontWeight: 'bold',
+        marginBottom: '15px',
+        color: '#64FFDA',
+    },
+    textarea: {
+        width: '100%',
+        height: 'calc(100% - 40px)',
+        padding: '10px',
+        border: '1px solid #2D3B4F',
+        borderRadius: '4px',
+        resize: 'none',
+        backgroundColor: '#2A3A4A',
+        color: '#E6F1FF',
+        fontSize: '14px',
+        lineHeight: '1.5',
+    },
+    error: {
+        color: '#FF6B6B',
+        marginBottom: '10px',
+        padding: '10px',
+        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+        borderRadius: '4px',
+    },
+    resultError: {
+        backgroundColor: 'rgba(255, 85, 85, 0.2)',
+        border: '1px solid #FF5555',
+        borderRadius: '4px',
+        padding: '10px',
+        margin: '10px 0',
+        color: '#FF5555',
+        fontFamily: 'monospace',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+    },
+    resultErrorTitle: {
+        fontWeight: 'bold',
+        marginBottom: '5px',
+        fontSize: '16px',
+    },
+    resultErrorMessage: {
+        fontSize: '14px',
+    },
+    resultSuccess: {
+        backgroundColor: 'rgba(100, 255, 218, 0.2)',
+        border: '1px solid #64FFDA',
+        borderRadius: '4px',
+        padding: '10px',
+        margin: '10px 0',
+        maxHeight: 'calc(100vh - 200px)',
+        overflow: 'auto',
+    },
+    resultSuccessTitle: {
+        fontWeight: 'bold',
+        marginBottom: '5px',
+        fontSize: '16px',
+        color: '#64FFDA',
+    },
+    resultLabel: {
+        fontWeight: 'bold',
+        marginTop: '10px',
+        marginBottom: '5px',
+        fontSize: '14px',
+        color: '#E6F1FF',
+    },
+    result: {
+        margin: 0,
+        color: '#E6F1FF',
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        backgroundColor: 'rgba(42, 58, 74, 0.5)',
+        padding: '8px',
+        borderRadius: '4px',
+        maxWidth: '100%',
+        overflow: 'auto',
+    },
+    resultJson: {
+        margin: 0,
+        color: '#E6F1FF',
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        backgroundColor: 'rgba(42, 58, 74, 0.5)',
+        padding: '8px',
+        borderRadius: '4px',
+        maxWidth: '100%',
+        overflow: 'auto'
+    },
+};
 
 const initialJson = {
     variables: {
@@ -98,7 +266,7 @@ class WasmHostContext {
 }
 `;
 
-const SuperscriptParserComponent = () => {
+export const SuperscriptParser = () => {
     // Add CSS animation for the error toast
     useEffect(() => {
         // Create a style element
@@ -305,171 +473,3 @@ const SuperscriptParserComponent = () => {
     );
 };
 
-const styles = {
-    container: {
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        backgroundColor: '#0A192F',
-        color: '#E6F1FF',
-    },
-    toolbar: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '10px 20px',
-        backgroundColor: '#172A45',
-        borderBottom: '1px solid #2D3B4F',
-    },
-    title: {
-        fontSize: '24px',
-        fontWeight: 'bold',
-        margin: 0,
-        color: '#64FFDA',
-    },
-    errorToast: {
-        display: 'flex',
-        alignItems: 'center',
-        backgroundColor: '#FF5555',
-        color: 'white',
-        padding: '10px 20px',
-        borderRadius: '4px',
-        margin: '10px 20px',
-        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
-        animation: 'slideIn 0.3s ease-out, shake 0.5s ease-in-out 0.3s',
-    },
-    errorIcon: {
-        marginRight: '10px',
-        fontSize: '20px',
-    },
-    errorMessage: {
-        flexGrow: 1,
-        fontWeight: 'bold',
-    },
-    errorCloseButton: {
-        background: 'none',
-        border: 'none',
-        color: 'white',
-        fontSize: '20px',
-        cursor: 'pointer',
-        padding: '0 5px',
-    },
-    button: {
-        backgroundColor: '#64FFDA',
-        border: 'none',
-        color: '#0A192F',
-        padding: '10px 20px',
-        textAlign: 'center',
-        textDecoration: 'none',
-        display: 'inline-block',
-        fontSize: '16px',
-        margin: '4px 2px',
-        cursor: 'pointer',
-        borderRadius: '4px',
-        transition: 'background-color 0.3s ease',
-    },
-    splitContainer: {
-        display: 'flex',
-        flexGrow: 1,
-    },
-    pane: {
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '20px',
-        overflow: 'auto',
-        backgroundColor: '#1E2A3A',
-    },
-    paneTitle: {
-        fontSize: '18px',
-        fontWeight: 'bold',
-        marginBottom: '15px',
-        color: '#64FFDA',
-    },
-    textarea: {
-        width: '100%',
-        height: 'calc(100% - 40px)',
-        padding: '10px',
-        border: '1px solid #2D3B4F',
-        borderRadius: '4px',
-        resize: 'none',
-        backgroundColor: '#2A3A4A',
-        color: '#E6F1FF',
-        fontSize: '14px',
-        lineHeight: '1.5',
-    },
-    error: {
-        color: '#FF6B6B',
-        marginBottom: '10px',
-        padding: '10px',
-        backgroundColor: 'rgba(255, 107, 107, 0.1)',
-        borderRadius: '4px',
-    },
-    resultError: {
-        backgroundColor: 'rgba(255, 85, 85, 0.2)',
-        border: '1px solid #FF5555',
-        borderRadius: '4px',
-        padding: '10px',
-        margin: '10px 0',
-        color: '#FF5555',
-        fontFamily: 'monospace',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-    },
-    resultErrorTitle: {
-        fontWeight: 'bold',
-        marginBottom: '5px',
-        fontSize: '16px',
-    },
-    resultErrorMessage: {
-        fontSize: '14px',
-    },
-    resultSuccess: {
-        backgroundColor: 'rgba(100, 255, 218, 0.2)',
-        border: '1px solid #64FFDA',
-        borderRadius: '4px',
-        padding: '10px',
-        margin: '10px 0',
-        maxHeight: 'calc(100vh - 200px)',
-        overflow: 'auto',
-    },
-    resultSuccessTitle: {
-        fontWeight: 'bold',
-        marginBottom: '5px',
-        fontSize: '16px',
-        color: '#64FFDA',
-    },
-    resultLabel: {
-        fontWeight: 'bold',
-        marginTop: '10px',
-        marginBottom: '5px',
-        fontSize: '14px',
-        color: '#E6F1FF',
-    },
-    result: {
-        margin: 0,
-        color: '#E6F1FF',
-        fontFamily: 'monospace',
-        fontSize: '14px',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        backgroundColor: 'rgba(42, 58, 74, 0.5)',
-        padding: '8px',
-        borderRadius: '4px',
-        maxWidth: '100%',
-        overflow: 'auto',
-    },
-    resultJson: {
-        margin: 0,
-        color: '#E6F1FF',
-        fontFamily: 'monospace',
-        fontSize: '14px',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        backgroundColor: 'rgba(42, 58, 74, 0.5)',
-        padding: '8px',
-        borderRadius: '4px',
-        maxWidth: '100%',
-        overflow: 'auto'
-    },
-};
-export default SuperscriptParserComponent;
