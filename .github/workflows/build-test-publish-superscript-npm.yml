@@ -57,7 +57,7 @@ jobs:
           set -e
           cd examples/node
           bun install
-          bun install ../../target/node
+          bun install ../../wasm/target/node
       
       - name: Build TypeScript example
         run: |
@@ -114,7 +114,7 @@ jobs:
           set -e
           cd examples/browser
           bun install
-          bun install ../../target/browser
+          bun install ../../wasm/target/browser
       
       - name: Build Browser example
         run: |
