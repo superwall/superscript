@@ -1,28 +1,26 @@
 {
   "name": "@superwall/superscript",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "main": "./dist/cjs/node.js",
   "module": "./dist/esm/browser.js",
   "browser": "./dist/esm/browser.js",
   "types": "./dist/types/index.d.ts",
   "exports": {
-    ".": {
-      "node": {
+      "./node": {
         "import": "./dist/esm/node.js",
         "require": "./dist/cjs/node.js",
         "types": "./dist/types/node.d.ts"
       },
-      "browser": {
+      "./browser": {
         "import": "./dist/esm/browser.js",
         "types": "./dist/types/browser.d.ts"
       },
-      "default": {
+      ".": {
         "import": "./dist/esm/node.js",
         "require": "./dist/cjs/node.js",
         "types": "./dist/types/node.d.ts"
       }
-    }
   },
   "files": [
     "dist/"
