@@ -4,6 +4,7 @@
     "": {
       "name": "browser-2",
       "dependencies": {
+        "superscript": "../../wasm/target/browser",
         "@monaco-editor/react": "^4.7.0",
         "@superwall/superscript": "file:../../wasm",
         "json-edit-react": "^1.23.1",
@@ -347,6 +348,8 @@
     "split.js": ["split.js@1.6.5", "", {}, ""],
 
     "state-local": ["state-local@1.0.7", "", {}, ""],
+
+    "superscript": ["superscript@file:../../wasm/target/browser", {}],
 
     "supports-color": ["supports-color@5.5.0", "", { "dependencies": { "has-flag": "^3.0.0" } }, "sha512-QjVjwdXIt408MIiAqCX4oUKsgU2EqAGzs2Ppkm4aQYbjm+ZEWEcW4SfFNTr4uMNZma0ey4f5lgLrkB0aX0QMow=="],
 

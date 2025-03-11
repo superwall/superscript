@@ -17,7 +17,7 @@ bun run build
 
 echo "75% - Build done - ✅"
 echo "75% - Installing to example project"
-cd examples/browser/
-bun install ../../target/browser
+cd ../examples/browser/
+bun install ../../wasm/target/browser
 
 echo "100% - Done - ✅"
