@@ -1,5 +1,6 @@
-import *  as wasm from "../target/node/supercel_wasm";
 
+import wasm from '@superwall/superscript';
+const { evaluate_with_context, ExecutionContext } = wasm;
 
 /**
  * An example of a WasmHostContext implementation from @file src/lib.rs.
@@ -28,6 +29,25 @@ class WasmHostContext {
             value: `Computed property ${name} with args ${args}`
         });
     }
+
+    device_property(name, args) {
+        console.log(`computed_property called with name: ${name}, args: ${args}`);
+        const parsedArgs = JSON.parse(args);
+        if (name === "daysSinceEvent") {
+            let toReturn =  JSON.stringify({
+                type: "uint",
+                value: 7
+            });
+            console.log("Computed property will return", toReturn);
+            return toReturn
+        }
+        console.error("Computed property not defined")
+        return JSON.stringify({
+            type: "string",
+            value: `Computed property ${name} with args ${args}`
+        });
+    }
+
 }
 
 /**
@@ -57,20 +77,26 @@ async function main() {
                     }
                 }
             },
-            platform: {
+            device: {
                 daysSinceEvent: [{
                     type: "string",
                     value: "event_name"
                 }]
             },
-            expression: 'platform.daysSinceEvent("test") == user.some_value'
+            computed: {
+                daysSinceEvent: [{
+                    type: "string",
+                    value: "event_name"
+                }]
+            },
+            expression: 'device.daysSinceEvent("test") == user.some_value'
         };
 
         const inputJson = JSON.stringify(input);
         console.log("Input JSON:", inputJson);
 
         try {
-            const result = await wasm.evaluate_with_context(inputJson, context);
+            const result = await evaluate_with_context(inputJson, context);
             console.log("Evaluation result:", result);
         } catch (error) {
             console.error("Evaluation error:", error);

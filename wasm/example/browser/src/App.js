@@ -1,10 +1,10 @@
 import './App.css';
-import CELParserComponent from "./CELParser";
+import SuperscriptParserComponent from "./SuperscriptParser";
 
 function App() {
   return (
     <div className="App">
-      <CELParserComponent/>
+      <SuperscriptParserComponent/>
     </div>
   );
 }

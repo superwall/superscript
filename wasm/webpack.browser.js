@@ -5,14 +5,29 @@ const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 const dist = path.resolve(__dirname, "./target/browser/");
 
 module.exports = {
-    name: "supercel-browser",
+    name: "superscript-browser",
     mode: "production",
     entry: {
-        index: "./index.js"
+        index: "./src/index.ts"
     },
     output: {
         path: path.resolve(__dirname, './target/browser'),
-        filename: "supercel.js"
+        filename: "superscript.js",
+        library: {
+            type: 'module'
+        }
+    },
+    resolve: {
+        extensions: ['.ts', '.js', '.wasm']
+    },
+    module: {
+        rules: [
+            {
+                test: /\.tsx?$/,
+                use: 'ts-loader',
+                exclude: /node_modules/
+            }
+        ]
     },
     devServer: {
         contentBase: dist,
@@ -26,6 +41,7 @@ module.exports = {
     ],
     experiments: {
         asyncWebAssembly: true,
-        topLevelAwait: true
+        topLevelAwait: true,
+        outputModule: true
     },
 };

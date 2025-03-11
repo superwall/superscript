@@ -6,9 +6,10 @@ module.exports = function override(config, env) {
     config.experiments = {
         ...config.experiments,
         asyncWebAssembly: true,
+        syncWebAssembly: true
     };
 
-    // Resolve WASM files
+    // Add .wasm to the list of extensions
     config.resolve.extensions.push('.wasm');
 
     // Add rule for WASM files

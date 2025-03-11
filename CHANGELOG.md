@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 0.2.0
+- Add typescript wrapper for the JS library
+- Add aarch64 support for Android
+
 ## 0.1.16
 
 - Bumped version for iOS cocoapods fix.
