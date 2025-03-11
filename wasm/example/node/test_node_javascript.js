@@ -1,5 +1,6 @@
-import * as wasm from "superscript";
 
+import wasm from '@superwall/superscript';
+const { evaluate_with_context, ExecutionContext } = wasm;
 
 /**
  * An example of a WasmHostContext implementation from @file src/lib.rs.
@@ -95,7 +96,7 @@ async function main() {
         console.log("Input JSON:", inputJson);
 
         try {
-            const result = await wasm.evaluate_with_context(inputJson, context);
+            const result = await evaluate_with_context(inputJson, context);
             console.log("Evaluation result:", result);
         } catch (error) {
             console.error("Evaluation error:", error);

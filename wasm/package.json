@@ -1,13 +1,50 @@
 {
   "name": "@superwall/superscript",
-  "version": "0.1.19",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "./dist/cjs/node.js",
+  "module": "./dist/esm/browser.js",
+  "browser": "./dist/esm/browser.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "import": "./dist/esm/node.js",
+        "require": "./dist/cjs/node.js",
+        "types": "./dist/types/node.d.ts"
+      },
+      "browser": {
+        "import": "./dist/esm/browser.js",
+        "types": "./dist/types/browser.d.ts"
+      },
+      "default": {
+        "import": "./dist/esm/node.js",
+        "require": "./dist/cjs/node.js",
+        "types": "./dist/types/node.d.ts"
+      }
+    }
+  },
+  "files": [
+    "dist/"
+  ],
   "scripts": {
-    "build:browser": "rm -rf target/browser && webpack --config webpack.browser.js",
-    "build:node": "rm -rf target/node && wasm-pack build --target nodejs --out-dir ./target/node",
-    "build": "rm -rf target && npm run build:node && npm run build:browser"
+    "clean": "rm -rf target dist",
+    "build:wasm:node": "wasm-pack build --target nodejs --out-dir ./target/node",
+    "build:wasm:browser": "wasm-pack build --target bundler --out-dir ./target/browser",
+    "build:ts:esm": "tsc --outDir ./dist/esm --module ES2020",
+    "build:ts:cjs": "tsc --outDir ./dist/cjs --module CommonJS",
+    "build:ts": "npm run build:ts:esm && npm run build:ts:cjs",
+    "copy:wasm": "mkdir -p dist/target/node dist/target/browser && cp -r target/node/* dist/target/node/ && cp -r target/browser/* dist/target/browser/",
+    "build": "npm run clean && npm run build:wasm:node && npm run build:wasm:browser && npm run build:ts && npm run copy:wasm",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/webpack": "^5.0.0",
     "@wasm-tool/wasm-pack-plugin": "1.5.0",
+    "ts-loader": "^9.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0",
     "webpack": "^5.93.0",
     "webpack-cli": "^5.1.4"
   }

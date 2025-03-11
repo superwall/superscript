@@ -5,13 +5,12 @@
   "private": true,
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
+    "@superwall/superscript": "file:../../",
     "json-edit-react": "^1.15.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-scripts": "5.0.1",
-    "react-split": "^2.0.14",
-    "supercel-wasm": "file:../../target/browser",
-    "superscript": "file:../../target/browser"
+    "react-split": "^2.0.14"
   },
   "scripts": {
     "predeploy": "npm run build",

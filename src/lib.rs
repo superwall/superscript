@@ -636,7 +636,37 @@ mod tests {
         assert_eq!(res, "{\"Err\":\"No such key: should_display\"}");
     }
 
+    #[tokio::test]
+    async fn test_execution_with_null() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        let res = evaluate_with_context(
+            r#"
+        {
+                    "variables": {
+                        "map": {
+                            "user": {
+                                "type": "map",
+                                "value": {
+                                    "some_value": {
+                                        "type": "Null",
+                                        "value": null
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "expression": "user.should_display == true && user.some_value > 12"
+       }
 
+        "#
+                .to_string(),
+            ctx,
+        );
+        println!("{}", res.clone());
+        assert_eq!(res, "{\"Err\":\"No such key: should_display\"}");
+    }
     #[tokio::test]
     async fn test_execution_with_platform_computed_reference() {
         let days_since = PassableValue::UInt(7);
@@ -739,7 +769,7 @@ mod tests {
                 }
             }
         },
-        "expression": "device.minutesSince('app_launch') == device.trial_days",
+        "expression": "computed.minutesSince('app_launch') == device.trial_days",
         "computed": {
             "daysSince": [
                 {
