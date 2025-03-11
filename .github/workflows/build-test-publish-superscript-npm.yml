@@ -2,9 +2,9 @@ name: Build, Test, and Publish Superscript NPM Package
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
   workflow_dispatch:
 
 permissions:
@@ -137,7 +137,7 @@ jobs:
       
       # Version management and publishing
       - name: Check for version changes
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         id: version_check
         run: |
           cd wasm
@@ -163,7 +163,7 @@ jobs:
           fi
       
       - name: Prepare for NPM publish
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
           cd wasm
           # Check if all required files exist
@@ -173,7 +173,7 @@ jobs:
           fi
       
       - name: Publish to NPM
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
           cd wasm
           npm publish --access public
@@ -181,7 +181,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
       - name: Commit version change
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.version_check.outputs.version_changed == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.version_check.outputs.version_changed == 'true'
         run: |
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'actions@github.com'
