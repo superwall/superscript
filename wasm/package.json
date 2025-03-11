@@ -1,13 +1,47 @@
 {
   "name": "@superwall/superscript",
   "version": "0.1.19",
+  "type": "module",
+  "main": "./dist/node.js",
+  "module": "./dist/browser.js",
+  "browser": "./dist/browser.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "import": "./dist/node.js",
+        "require": "./dist/node.js",
+        "types": "./dist/node.d.ts"
+      },
+      "browser": {
+        "import": "./dist/browser.js",
+        "types": "./dist/browser.d.ts"
+      },
+      "default": {
+        "import": "./dist/node.js",
+        "types": "./dist/node.d.ts"
+      }
+    }
+  },
+  "files": [
+    "dist/",
+    "target/",
+    "src/"
+  ],
   "scripts": {
-    "build:browser": "rm -rf target/browser && webpack --config webpack.browser.js",
-    "build:node": "rm -rf target/node && wasm-pack build --target nodejs --out-dir ./target/node",
-    "build": "rm -rf target && npm run build:node && npm run build:browser"
+    "clean": "rm -rf target dist",
+    "build:wasm:node": "wasm-pack build --target nodejs --out-dir ./target/node",
+    "build:wasm:browser": "wasm-pack build --target bundler --out-dir ./target/browser",
+    "build:ts": "tsc",
+    "build": "npm run clean && npm run build:wasm:node && npm run build:wasm:browser && npm run build:ts"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/webpack": "^5.0.0",
     "@wasm-tool/wasm-pack-plugin": "1.5.0",
+    "ts-loader": "^9.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0",
     "webpack": "^5.93.0",
     "webpack-cli": "^5.1.4"
   }

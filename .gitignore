@@ -5,6 +5,7 @@
 **/.so
 **/.kt
 /target
+/wasm/dist
 # Created by https://www.toptal.com/developers/gitignore/api/intellij,rust
 # Edit at https://www.toptal.com/developers/gitignore?templates=intellij,rust
 
@@ -138,3 +139,7 @@ Cargo.lock
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/intellij,rust
+**.SYMDEF
+
+**/*.d.ts
+**/dist/**

@@ -1,13 +1,18 @@
 {
-  "name": "example",
+  "name": "superscript-node-example",
   "version": "0.1.0",
-  "homepage": "https://superwall.github.io/superscript",
   "private": true,
   "type": "module",
-  "dependencies": {
-    "superscript": "file:../../target/node"
-  },
   "scripts": {
-    "predeploy": "npm run build"
+    "build": "tsc",
+    "start": "node dist/test_node.js",
+    "test": "cd tests && npm install && npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "dependencies": {
+    "@superwall/superscript": "file:../../"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "ts-node": "^10.0.0"
   }
 }
