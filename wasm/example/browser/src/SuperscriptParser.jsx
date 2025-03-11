@@ -22,13 +22,13 @@ const initialJson = {
             }
         }
     },
-    device: {
+    computed: {
         someComputedValue: [{
             type: "string",
             value: "event_name"
         }]
     },
-    computed: {
+    device: {
         daysSinceEvent: [{
             type: "string",
             value: "event_name"
@@ -257,7 +257,6 @@ const SuperscriptParserComponent = () => {
                         onUpdate={({newData}) => {
                             setJson(newData);
                         }}
-                        theme="githubDark"
                         collapse={false}
                         enableClipboard={true}
                         showCollectionCount={true}

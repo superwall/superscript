@@ -2,38 +2,41 @@
   "name": "@superwall/superscript",
   "version": "0.1.19",
   "type": "module",
-  "main": "./dist/node.js",
-  "module": "./dist/browser.js",
-  "browser": "./dist/browser.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/cjs/node.js",
+  "module": "./dist/esm/browser.js",
+  "browser": "./dist/esm/browser.js",
+  "types": "./dist/types/index.d.ts",
   "exports": {
     ".": {
       "node": {
-        "import": "./dist/node.js",
-        "require": "./dist/node.js",
-        "types": "./dist/node.d.ts"
+        "import": "./dist/esm/node.js",
+        "require": "./dist/cjs/node.js",
+        "types": "./dist/types/node.d.ts"
       },
       "browser": {
-        "import": "./dist/browser.js",
-        "types": "./dist/browser.d.ts"
+        "import": "./dist/esm/browser.js",
+        "types": "./dist/types/browser.d.ts"
       },
       "default": {
-        "import": "./dist/node.js",
-        "types": "./dist/node.d.ts"
+        "import": "./dist/esm/node.js",
+        "require": "./dist/cjs/node.js",
+        "types": "./dist/types/node.d.ts"
       }
     }
   },
   "files": [
-    "dist/",
-    "target/",
-    "src/"
+    "dist/"
   ],
   "scripts": {
     "clean": "rm -rf target dist",
     "build:wasm:node": "wasm-pack build --target nodejs --out-dir ./target/node",
     "build:wasm:browser": "wasm-pack build --target bundler --out-dir ./target/browser",
-    "build:ts": "tsc",
-    "build": "npm run clean && npm run build:wasm:node && npm run build:wasm:browser && npm run build:ts"
+    "build:ts:esm": "tsc --outDir ./dist/esm --module ES2020",
+    "build:ts:cjs": "tsc --outDir ./dist/cjs --module CommonJS",
+    "build:ts": "npm run build:ts:esm && npm run build:ts:cjs",
+    "copy:wasm": "mkdir -p dist/target/node dist/target/browser && cp -r target/node/* dist/target/node/ && cp -r target/browser/* dist/target/browser/",
+    "build": "npm run clean && npm run build:wasm:node && npm run build:wasm:browser && npm run build:ts && npm run copy:wasm",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
