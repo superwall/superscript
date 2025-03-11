@@ -1,11 +1,14 @@
-import pkg from '@superwall/superscript';
+import pkg from '@superwall/superscript/node';
+
 const { evaluateWithContext } = pkg;
-class TestHostContext {
-    computed_property(name, args) {
+import type { ExecutionContext, SuperscriptHostContext, PassableValue } from '@superwall/superscript/node';
+
+class TestHostContext implements SuperscriptHostContext {
+    computed_property(name: string, args: [PassableValue]): PassableValue {
         console.log(`computed_property called with name: ${name}, args: ${JSON.stringify(args)}`);
         const parsedArgs = args;
         if (name === "randomUserValue") {
-            const toReturn = {
+            const toReturn: PassableValue = {
                 type: 'uint',
                 value: 7
             };
@@ -18,11 +21,12 @@ class TestHostContext {
             value: `Computed property ${name} with args ${JSON.stringify(args)}`
         };
     }
-    device_property(name, args) {
+
+    device_property(name: string, args: [PassableValue]): PassableValue {
         console.log(`device_property called with name: ${name}, args: ${JSON.stringify(args)}`);
         const parsedArgs = args;
         if (name === "daysSinceEvent") {
-            const toReturn = {
+            const toReturn: PassableValue = {
                 type: 'uint',
                 value: 7
             };
@@ -36,11 +40,14 @@ class TestHostContext {
         };
     }
 }
+
 async function main() {
     try {
         console.log("TS Node example - WASM module initialized successfully");
+
         const context = new TestHostContext();
-        const input = {
+
+        const input: ExecutionContext = {
             variables: {
                 map: {
                     user: {
@@ -60,34 +67,35 @@ async function main() {
             },
             device: {
                 daysSinceEvent: [{
-                        type: "string",
-                        value: "event_name"
-                    }]
+                    type: "string",
+                    value: "event_name"
+                }]
             },
             computed: {
                 randomUserValue: [{
-                        type: "string",
-                        value: "event_name"
-                    }]
+                    type: "string",
+                    value: "event_name"
+                }]
             },
             expression: 'computed.randomUserValue("test") == user.some_value'
         };
+
         try {
             const result = await evaluateWithContext(input, context);
             console.log("Evaluation result:", result);
-        }
-        catch (error) {
+        } catch (error) {
             console.error("Evaluation error:", error);
-            console.error("Error details:", error.stack);
+            console.error("Error details:", (error as Error).stack);
         }
-    }
-    catch (error) {
+
+    } catch (error) {
         console.error("Initialization error:", error);
-        console.error("Error details:", error.stack);
+        console.error("Error details:", (error as Error).stack);
     }
 }
+
 console.log("Node.js environment detected");
 main().catch((error) => {
     console.error(error);
     process.exit(1);
-});
+}); 
