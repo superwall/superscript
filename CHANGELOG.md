@@ -1,6 +1,11 @@
 # CHANGELOG
 
+## 0.2.1
+
+- Readme and example updates
+
 ## 0.2.0
+
 - Add typescript wrapper for the JS library
 - Add aarch64 support for Android
 
