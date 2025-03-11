@@ -2,9 +2,9 @@ name: Build, Test, and Publish Superscript NPM Package
 
 on:
   push:
-    branches: [ main, ir/feature/proxy-typescript-interface ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, ir/feature/proxy-typescript-interface ]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
