@@ -110,7 +110,7 @@ jobs:
           set -e
           cd examples/browser
           CI=false bun run build
-          if [ ! -d build ]; then
+          if [ ! -d dist ]; then
             echo "Browser example build failed - build directory not found"
             exit 1
           fi
