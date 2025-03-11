@@ -3,7 +3,7 @@
   "version": "0.2.1",
   "type": "module",
   "main": "./dist/cjs/node.js",
-  "module": "./dist/esm/browser.js",
+  "module": "./dist/esm/node.js",
   "browser": "./dist/esm/browser.js",
   "types": "./dist/types/index.d.ts",
   "exports": {

@@ -9,10 +9,10 @@
     "test": "cd tests && npm install && npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "dependencies": {
-    "@superwall/superscript": "file:../../"
+    "@superwall/superscript": "file:../../target/node"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "ts-node": "^10.0.0"
+    "typescript": "^5.8.2",
+    "ts-node": "^10.9.2"
   }
 }
