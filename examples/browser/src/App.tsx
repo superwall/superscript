@@ -1,5 +1,3 @@
-import './App.css'
-
 // @ts-expect-error
 import {SuperscriptParser} from "./SuperscriptParser";
 
