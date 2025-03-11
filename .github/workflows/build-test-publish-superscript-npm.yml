@@ -25,6 +25,8 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
       
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
@@ -54,14 +56,14 @@ jobs:
         run: |
           set -e
           cd wasm/example/node
-          npm install
-          npm install ../../target/node
+          bun install
+          bun install ../../target/node
       
       - name: Build TypeScript example
         run: |
           set -e
           cd wasm/example/node
-          npm run build
+          bun run build
           if [ ! -f dist/test_node.js ]; then
             echo "TypeScript build failed - dist/test_node.js not found"
             exit 1
@@ -73,7 +75,7 @@ jobs:
           cd wasm/example/node
           # Run the original JavaScript example
           echo "Running JavaScript example (test_node_javascript.js)..."
-          node test_node_javascript.js
+          bun run test_node_javascript.js
           if [ $? -ne 0 ]; then
             echo "JavaScript example execution failed"
             exit 1
@@ -86,7 +88,7 @@ jobs:
           cd wasm/example/node
           # Run the compiled TypeScript example
           echo "Running compiled TypeScript example (dist/test_node.js)..."
-          node dist/test_node.js
+          bun run test_node.ts
           if [ $? -ne 0 ]; then
             echo "TypeScript compiled example execution failed"
             exit 1
@@ -99,7 +101,7 @@ jobs:
           set -e
           cd wasm/example/node
           echo "Running Superscript tests..."
-          npm run test
+          bun run test
           if [ $? -ne 0 ]; then
             echo "Superscript tests failed"
             exit 1
@@ -111,14 +113,14 @@ jobs:
         run: |
           set -e
           cd wasm/example/browser
-          npm install
-          npm install ../../target/browser
+          bun install
+          bun install ../../target/browser
       
       - name: Build Browser example
         run: |
           set -e
           cd wasm/example/browser
-          CI=false npm run build
+          CI=false bun run build
           if [ ! -d build ]; then
             echo "Browser example build failed - build directory not found"
             exit 1
