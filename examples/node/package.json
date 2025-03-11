@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/test_node.js",
-    "test": "cd tests && npm install && npm run build && node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "test": "cd tests && bun install && bun test"
   },
   "dependencies": {
     "@superwall/superscript": "file:../../wasm"
