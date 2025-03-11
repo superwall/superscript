@@ -162,16 +162,6 @@ jobs:
             echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           fi
       
-      - name: Prepare for NPM publish
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: |
-          cd wasm
-          # Check if all required files exist
-          if [ ! -d "./target/node" ] || [ ! -d "./target/browser" ] || [ ! -d "./types" ]; then
-            echo "Missing required directories for npm publish"
-            exit 1
-          fi
-      
       - name: Publish to NPM
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
