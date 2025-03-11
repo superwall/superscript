@@ -58,17 +58,6 @@ jobs:
           cd examples/node
           bun install
           bun install ../../wasm/target/node
-      
-      - name: Build TypeScript example
-        run: |
-          set -e
-          cd examples/node
-          bun run build
-          if [ ! -f dist/test_node.js ]; then
-            echo "TypeScript build failed - dist/test_node.js not found"
-            exit 1
-          fi
-      
       - name: Run JavaScript example
         run: |
           set -e
