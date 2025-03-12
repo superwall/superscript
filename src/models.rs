@@ -6,11 +6,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub(crate) struct ExecutionContext {
-    pub(crate) variables: PassableMap,
-    pub(crate) expression: String,
-    pub(crate) computed: Option<HashMap<String, Vec<PassableValue>>>,
-    pub(crate) device: Option<HashMap<String, Vec<PassableValue>>>
+pub struct ExecutionContext {
+    pub variables: PassableMap,
+    pub expression: String,
+    pub computed: Option<HashMap<String, Vec<PassableValue>>>,
+    pub device: Option<HashMap<String, Vec<PassableValue>>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]

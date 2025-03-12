@@ -6,7 +6,7 @@ pub mod models;
 use crate::ast::{ASTExecutionContext, JSONExpression};
 use crate::models::PassableValue::Function;
 use crate::models::PassableValue::PMap;
-use crate::models::{ExecutionContext, PassableMap, PassableValue};
+pub use crate::models::{ExecutionContext, PassableMap, PassableValue};
 use crate::ExecutableType::{CompiledProgram, AST};
 use async_trait::async_trait;
 use cel_interpreter::extractors::This;
