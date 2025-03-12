@@ -1,32 +1,31 @@
 #[cfg(not(target_arch = "wasm32"))]
 uniffi::include_scaffolding!("cel");
-mod ast;
-mod models;
+pub mod ast;
+pub mod models;
 
 use crate::ast::{ASTExecutionContext, JSONExpression};
 use crate::models::PassableValue::Function;
-use crate::models::{ExecutionContext, PassableMap, PassableValue};
 use crate::models::PassableValue::PMap;
+pub use crate::models::{ExecutionContext, PassableMap, PassableValue};
 use crate::ExecutableType::{CompiledProgram, AST};
 use async_trait::async_trait;
 use cel_interpreter::extractors::This;
 use cel_interpreter::objects::{Key, Map, TryIntoValue};
 use cel_interpreter::{Context, ExecutionError, Expression, FunctionContext, Program, Value};
+use cel_parser::parse;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Debug;
 use std::ops::Deref;
-use std::sync::{Arc, mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::spawn;
-use cel_parser::parse;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_futures::spawn_local;
 #[cfg(not(target_arch = "wasm32"))]
 use futures_lite::future::block_on;
 use uniffi::deps::log::__private_api::log;
-
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::spawn_local;
 
 /**
  * Host context trait that defines the methods that the host context should implement,
@@ -57,12 +56,13 @@ pub trait HostContext: Send + Sync {
  * @return The result of the evaluation, either "true" or "false"
  */
 pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>) -> String {
-    let data: Result<ASTExecutionContext,_> = serde_json::from_str(definition.as_str());
+    let data: Result<ASTExecutionContext, _> = serde_json::from_str(definition.as_str());
     let data = match data {
         Ok(data) => data,
         Err(_) => {
-            let e : Result<_, String> = Err::<ASTExecutionContext,String>("Invalid execution context JSON".to_string());
-            return serde_json::to_string(&e).unwrap()
+            let e: Result<_, String> =
+                Err::<ASTExecutionContext, String>("Invalid execution context JSON".to_string());
+            return serde_json::to_string(&e).unwrap();
         }
     };
     let host = host.clone();
@@ -72,8 +72,9 @@ pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>)
         data.computed,
         data.device,
         host,
-    ).map(|val| val.to_passable())
-        .map_err(|err| err.to_string());
+    )
+    .map(|val| val.to_passable())
+    .map_err(|err| err.to_string());
     serde_json::to_string(&res).unwrap()
 }
 
@@ -83,16 +84,18 @@ pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>)
  * @return The result of the evaluation, either "true" or "false"
  */
 pub fn evaluate_ast(ast: String) -> String {
-    let data: Result<JSONExpression,_> = serde_json::from_str(ast.as_str());
-    let data : JSONExpression = match data {
+    let data: Result<JSONExpression, _> = serde_json::from_str(ast.as_str());
+    let data: JSONExpression = match data {
         Ok(data) => data,
         Err(_) => {
-            let e : Result<_, String> = Err::<JSONExpression,String>("Invalid definition for AST Execution".to_string());
-            return serde_json::to_string(&e).unwrap()
+            let e: Result<_, String> =
+                Err::<JSONExpression, String>("Invalid definition for AST Execution".to_string());
+            return serde_json::to_string(&e).unwrap();
         }
     };
     let ctx = Context::default();
-    let res = ctx.resolve(&data.into())
+    let res = ctx
+        .resolve(&data.into())
         .map(|val| DisplayableValue(val.clone()).to_passable())
         .map_err(|err| DisplayableError(err).to_string());
     serde_json::to_string(&res).unwrap()
@@ -106,30 +109,22 @@ pub fn evaluate_ast(ast: String) -> String {
  */
 
 pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> String {
-    let data: Result<ExecutionContext,_> = serde_json::from_str(definition.as_str());
+    let data: Result<ExecutionContext, _> = serde_json::from_str(definition.as_str());
     let data: ExecutionContext = match data {
         Ok(data) => data,
         Err(_) => {
-            let e : Result<ExecutionContext, String> = Err("Invalid execution context JSON".to_string());
-            return serde_json::to_string(&e).unwrap()
+            let e: Result<ExecutionContext, String> =
+                Err("Invalid execution context JSON".to_string());
+            return serde_json::to_string(&e).unwrap();
         }
     };
-    let compiled = Program::compile(data.expression.as_str())
-        .map(|program| CompiledProgram(program));
+    let compiled =
+        Program::compile(data.expression.as_str()).map(|program| CompiledProgram(program));
     let result = match compiled {
-        Ok(compiled) => {
-            execute_with(
-                compiled,
-                data.variables,
-                data.computed,
-                data.device,
-                host,
-            ).map(|val| val.to_passable())
-                .map_err(|err| err.to_string())
-
-        }
-        Err(e) =>
-            Err("Failed to compile expression".to_string())
+        Ok(compiled) => execute_with(compiled, data.variables, data.computed, data.device, host)
+            .map(|val| val.to_passable())
+            .map_err(|err| err.to_string()),
+        Err(e) => Err("Failed to compile expression".to_string()),
     };
     serde_json::to_string(&result).unwrap()
 }
@@ -141,8 +136,7 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
  */
 pub fn parse_to_ast(expression: String) -> String {
     let ast: Result<JSONExpression, _> = parse(expression.as_str()).map(|expr| expr.into());
-    let ast = ast
-        .map_err(|err| err.to_string());
+    let ast = ast.map_err(|err| err.to_string());
     serde_json::to_string(&ast.unwrap()).unwrap()
 }
 
@@ -173,15 +167,17 @@ fn execute_with(
     let mut ctx = Context::default();
     // Isolate device to re-bind later
     let device_map = variables.clone();
-    let device_map = device_map.map.get("device").clone().unwrap_or(&PMap(HashMap::new())).clone();
+    let device_map = device_map
+        .map
+        .get("device")
+        .clone()
+        .unwrap_or(&PMap(HashMap::new()))
+        .clone();
 
     // Add predefined variables locally to the context
-    variables
-        .map
-        .iter()
-        .for_each(|it| {
-            let _ = ctx.add_variable(it.0.as_str(), it.1.to_cel());
-        });
+    variables.map.iter().for_each(|it| {
+        let _ = ctx.add_variable(it.0.as_str(), it.1.to_cel());
+    });
     // Add maybe function
     ctx.add_function("maybe", maybe);
 
@@ -209,27 +205,21 @@ fn execute_with(
                 serde_json::to_string::<Vec<PassableValue>>(&vec![])
             };
             match args {
-                Ok(args) => {
-                    match prop_type {
-                        PropType::Computed => Ok(ctx.computed_property(
-                            name.clone().to_string(),
-                            args,
-                        ).await),
-                        PropType::Device => Ok(ctx.device_property(
-                            name.clone().to_string(),
-                            args,
-                        ).await),
+                Ok(args) => match prop_type {
+                    PropType::Computed => {
+                        Ok(ctx.computed_property(name.clone().to_string(), args).await)
                     }
-                }
-                Err(e) => {
-                    Err(ExecutionError::UndeclaredReference(name).to_string())
-                }
+                    PropType::Device => {
+                        Ok(ctx.device_property(name.clone().to_string(), args).await)
+                    }
+                },
+                Err(e) => Err(ExecutionError::UndeclaredReference(name).to_string()),
             }
         });
         // Deserialize the value
-        let passable: Result<PassableValue, String> =
-            val.map(|val| serde_json::from_str(val.as_str()).unwrap_or(PassableValue::Null))
-                .map_err(|err| err.to_string());
+        let passable: Result<PassableValue, String> = val
+            .map(|val| serde_json::from_str(val.as_str()).unwrap_or(PassableValue::Null))
+            .map_err(|err| err.to_string());
 
         passable
     }
@@ -246,15 +236,18 @@ fn execute_with(
         let val = match prop_type {
             PropType::Computed => ctx.computed_property(
                 name.clone().to_string(),
-                serde_json::to_string(&args).expect("Failed to serialize args for computed property"),
+                serde_json::to_string(&args)
+                    .expect("Failed to serialize args for computed property"),
             ),
             PropType::Device => ctx.device_property(
                 name.clone().to_string(),
-                serde_json::to_string(&args).expect("Failed to serialize args for computed property"),
+                serde_json::to_string(&args)
+                    .expect("Failed to serialize args for computed property"),
             ),
         };
         // Deserialize the value
-        let passable: Option<PassableValue> = serde_json::from_str(val.as_str()).unwrap_or(Some(PassableValue::Null));
+        let passable: Option<PassableValue> =
+            serde_json::from_str(val.as_str()).unwrap_or(Some(PassableValue::Null));
 
         passable
     }
@@ -281,7 +274,6 @@ fn execute_with(
 
     let device = device.unwrap_or(HashMap::new()).clone();
 
-
     // From defined properties the device properties
     let total_device_properties = if let PMap(map) = device_map {
         map
@@ -305,7 +297,11 @@ fn execute_with(
                 Function(name, args).to_cel(),
             )
         })
-        .chain(total_device_properties.iter().map(|(k, v)| (Key::String(Arc::new(k.clone())), v.to_cel().clone())))
+        .chain(
+            total_device_properties
+                .iter()
+                .map(|(k, v)| (Key::String(Arc::new(k.clone())), v.to_cel().clone())),
+        )
         .collect();
 
     // Add the map to the `computed` object
@@ -323,7 +319,6 @@ fn execute_with(
             map: Arc::new(device_host_properties),
         }),
     );
-
 
     let binding = device.clone();
     // Combine the device and computed properties
@@ -349,28 +344,33 @@ fn execute_with(
                 let args = fx.args.clone(); // Clone the arguments
                 let host = host_clone.lock(); // Lock the host for safe access
                 match host {
-                    Ok(host) => {
-                        prop_for(
-                            if device.contains_key(&it.0)
-                            { PropType::Device } else { PropType::Computed },
-                            name.clone(),
-                            Some(
-                                args.iter()
-                                    .map(|expression| {
-                                        DisplayableValue(ftx.ptx.resolve(expression).unwrap()).to_passable()
-                                    })
-                                    .collect(),
-                            ),
-                            &*host,
-                        )
-                            .map_or(Err(ExecutionError::UndeclaredReference(name)), |v| {
-                                Ok(v.to_cel())
-                            })
-                    }
+                    Ok(host) => prop_for(
+                        if device.contains_key(&it.0) {
+                            PropType::Device
+                        } else {
+                            PropType::Computed
+                        },
+                        name.clone(),
+                        Some(
+                            args.iter()
+                                .map(|expression| {
+                                    DisplayableValue(ftx.ptx.resolve(expression).unwrap())
+                                        .to_passable()
+                                })
+                                .collect(),
+                        ),
+                        &*host,
+                    )
+                    .map_or(Err(ExecutionError::UndeclaredReference(name)), |v| {
+                        Ok(v.to_cel())
+                    }),
                     Err(e) => {
                         let e = e.to_string();
                         let name = name.clone().to_string();
-                        let error = ExecutionError::FunctionError { function: name, message: e };
+                        let error = ExecutionError::FunctionError {
+                            function: name,
+                            message: e,
+                        };
                         Err(error)
                     }
                 }
@@ -383,7 +383,8 @@ fn execute_with(
         CompiledProgram(program) => &program.execute(&ctx),
     };
 
-    val.clone().map(|val| DisplayableValue(val.clone()))
+    val.clone()
+        .map(|val| DisplayableValue(val.clone()))
         .map_err(|err| DisplayableError(err))
 }
 
@@ -486,7 +487,7 @@ mod tests {
         }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
@@ -509,7 +510,7 @@ mod tests {
         }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
@@ -532,10 +533,13 @@ mod tests {
         }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
-        assert_eq!(res, "{\"Err\":\"Undeclared reference to 'test_custom_func'\"}");
+        assert_eq!(
+            res,
+            "{\"Err\":\"Undeclared reference to 'test_custom_func'\"}"
+        );
     }
 
     #[test]
@@ -562,7 +566,7 @@ mod tests {
         }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
@@ -597,7 +601,7 @@ mod tests {
        }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -629,7 +633,7 @@ mod tests {
        }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -661,7 +665,7 @@ mod tests {
        }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -736,7 +740,8 @@ mod tests {
                 }
             ]
         }
-    }"#.to_string(),
+    }"#
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -822,13 +827,13 @@ mod tests {
                 }
             ]
         }
-    }"#.to_string(),
+    }"#
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
     }
-
 
     #[test]
     fn test_parse_to_ast() {
