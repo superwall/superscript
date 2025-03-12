@@ -1,6 +1,6 @@
 [package]
 name = "superscript"
-version = "0.2.1"
+version = "0.2.3"
 edition = "2021"
 description = "A Common Expression Language (CEL) interpreter for Rust"
 license = "MIT"
@@ -19,7 +19,7 @@ include = [
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.htmlž
 [lib]
-name = "cel_eval"
+name = "superscript"
 crate-type = ["staticlib", "cdylib", "rlib"]
 path = "src/lib.rs"
 
