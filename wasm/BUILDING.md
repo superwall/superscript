@@ -41,9 +41,9 @@ This will generate targets in the `.target/` directory
 
 For **browsers**:
 
-- Open `./example/browser/` and run `npm install ../../target/browser && npm run start`
+- Open `./examples/browser/` and run `bun install ../../target/browser && bun run start`
 
 For **node**:
-- Open `./example/` and run `node test_node.js`
+- Open `./examples/` and run `node test_node.js`
 
 

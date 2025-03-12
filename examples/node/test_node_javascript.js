@@ -1,5 +1,5 @@
 
-import wasm from '@superwall/superscript';
+import wasm from '@superwall/superscript/node';
 const { evaluate_with_context, ExecutionContext } = wasm;
 
 /**
