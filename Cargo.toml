@@ -1,12 +1,17 @@
 [package]
-name = "cel-eval"
+name = "superscript"
 version = "0.2.1"
 edition = "2021"
+description = "A Common Expression Language (CEL) interpreter for Rust"
+license = "MIT"
+repository = "https://github.com/superwall/superscript"
+homepage = "https://github.com/superwall/superscript"
+documentation = "https://github.com/superwall/superscript"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.htmlž
 [lib]
 name = "cel_eval"
-crate-type = ["staticlib","cdylib", "rlib"]
+crate-type = ["staticlib", "cdylib", "rlib"]
 path = "src/lib.rs"
 
 [dependencies]
@@ -23,16 +28,16 @@ futures-lite = "2.3.0"
 [dev-dependencies]
 tokio = { version = "^1.20", features = ["rt-multi-thread", "macros"] }
 [build-dependencies]
-uniffi = { version = "0.28", features = [ "build" ] }
+uniffi = { version = "0.28", features = ["build"] }
 
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
 
 [profile.release]
-opt-level = "z"  # Optimize for size.
+opt-level = "z"         # Optimize for size.
 lto = "fat"
-debug=false
+debug = false
 incremental = false
 overflow-checks = false
 codegen-units = 1
