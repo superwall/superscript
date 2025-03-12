@@ -7,6 +7,8 @@ license = "MIT"
 repository = "https://github.com/superwall/superscript"
 homepage = "https://github.com/superwall/superscript"
 documentation = "https://github.com/superwall/superscript"
+exclude = ["build.rs", "uniffi-bindgen.rs"]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.htmlž
 [lib]
@@ -17,7 +19,7 @@ path = "src/lib.rs"
 [dependencies]
 cel-interpreter = "0.8.1"
 cel-parser = "0.7.1"
-uniffi = { version = "0.28" }
+uniffi = { version = "0.28", features = ["cli"] }
 serde = { version = "1.0", features = ["serde_derive"] }
 serde_json = { version = "1.0" }
 async-trait = "0.1.81"
