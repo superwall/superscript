@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.2.3
+- Fix aarch64 build for Android
+
+## 0.2.2
+- Version bump for deployment purposes
+
 ## 0.2.1
 
 - Readme and example updates
