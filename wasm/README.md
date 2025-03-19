@@ -10,48 +10,49 @@ First, import the module:
 
 Next, create a WasmHostContext class to allow the expression evaluator to call the host environment (your JS)
 and compute the dynamic properties, i.e. `platform.daysSinceEvent("event_name")`.
-```javascript
+
+```typescript
 /**
 * @param name - The name of the computed property or function being invoked.
-* @param args - JSON string of the arguments for the function.
-* @returns JSON-serialized string of the computed property value.
+* @param args - arguments for the function.
+* @returns a resolved value.
 * */
-class WasmHostContext {
-  computed_property(name, args) {
-        console.log(`computed_property called with name: ${name}, args: ${args}`);
-        const parsedArgs = JSON.parse(args);
-        if (name === "daysSinceEvent") {
-            let toReturn =  JSON.stringify({
-                  type: "uint",
-                  value: 7
-            });
+class TestHostContext implements SuperscriptHostContext {
+    computed_property(name: string, args: [PassableValue]): PassableValue {
+        console.log(`computed_property called with name: ${name}, args: ${JSON.stringify(args)}`);
+        const parsedArgs = args;
+        if (name === "randomUserValue") {
+            const toReturn: PassableValue = {
+                type: 'uint',
+                value: 7
+            };
             console.log("Computed property will return", toReturn);
-            return toReturn
+            return toReturn;
         }
-        console.error("Computed property not defined")
-        return JSON.stringify({
-                type: "string",
-                value: `Computed property ${name} with args ${args}`
-        });
-  }
+        console.error("Computed property not defined");
+        return {
+            type: 'string',
+            value: `Computed property ${name} with args ${JSON.stringify(args)}`
+        };
+    }
 
-  device_property(name, args) {
-      console.log(`computed_property called with name: ${name}, args: ${args}`);
-      const parsedArgs = JSON.parse(args);
-      if (name === "daysSinceEvent") {
-         let toReturn =  JSON.stringify({
-                      type: "uint",
-                      value: 7
-                   });
-          console.log("Computed property will return", toReturn);
-          return toReturn
-      }
-      console.error("Computed property not defined")
-      return JSON.stringify({
-          type: "string",
-          value: `Computed property ${name} with args ${args}`
-      });
-  }
+    device_property(name: string, args: [PassableValue]): PassableValue {
+        console.log(`device_property called with name: ${name}, args: ${JSON.stringify(args)}`);
+        const parsedArgs = args;
+        if (name === "daysSinceEvent") {
+            const toReturn: PassableValue = {
+                type: 'uint',
+                value: 7
+            };
+            console.log("Device property will return", toReturn);
+            return toReturn;
+        }
+        console.error("Device property not defined");
+        return {
+            type: 'string',
+            value: `Device property ${name} with args ${JSON.stringify(args)}`
+        };
+    }
 }
 ```
 
@@ -61,46 +62,42 @@ Then create an instance of the `WasmHostContext` and provide it together with th
 
 ```javascript
 async function main() {
-       const context = new WasmHostContext();
+    const context = new TestHostContext();
 
-       const input = {
-           //Available variables
-           variables: {
-               map: {
-                   user: {
-                       type: "map",
-                       value: {
-                           should_display: {
-                               type: "bool",
-                               value: true
-                           },
-                           some_value: {
-                               type: "uint",
-                               value: 7
-                           }
-                       }
-                   }
-               }
-           },
-           computed: {
-               //Computed values definitions
-               daysSinceEvent: [{
-                   type: "string",
-                   value: "event_name"
-               }]
-           },
-           device: {
-               //Device value definitions
-               daysSinceEvent: [{
-                   type: "string",
-                   value: "event_name"
-               }]
-           },
-           expression: 'computed.daysSinceEvent("test") == user.some_value'
-       };
+    const input: ExecutionContext = {
+            variables: {
+                map: {
+                    user: {
+                        type: "map",
+                        value: {
+                            should_display: {
+                                type: "bool",
+                                value: true
+                            },
+                            some_value: {
+                                type: "uint",
+                                value: 7
+                            }
+                        }
+                    }
+                }
+            },
+            device: {
+                daysSinceEvent: [{
+                    type: "string",
+                    value: "event_name"
+                }]
+            },
+            computed: {
+                randomUserValue: [{
+                    type: "string",
+                    value: "event_name"
+                }]
+            },
+            expression: 'computed.randomUserValue("test") == user.some_value'
+        };
 
-       const inputJson = JSON.stringify(input);
-       const result = await wasm.evaluate_with_context(inputJson, context);
+        const result = await evaluateWithContext(input, context);
 }
 ```
 
