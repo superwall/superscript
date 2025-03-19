@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 0.2.4
+- Fix aarch64 build for Android
+
 ## 0.2.3
 - Fix aarch64 build for Android
 
