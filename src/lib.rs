@@ -481,6 +481,7 @@ impl fmt::Display for DisplayableError {
 }
 
 // We use this to turn the ResultCallback into a future we can await
+#[cfg(not(target_arch = "wasm32"))]
 impl ResultCallback for CallbackFuture {
     fn on_result(&self, result: String) {
         let mut shared = self.shared.lock().unwrap(); // Now valid
@@ -490,16 +491,18 @@ impl ResultCallback for CallbackFuture {
         }
     }
 }
-
+#[cfg(not(target_arch = "wasm32"))]
 pub struct CallbackFuture {
     shared: Arc<Mutex<SharedState>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct SharedState {
     result: Option<String>,
     waker: Option<Waker>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Future for CallbackFuture {
     type Output = String;
 
