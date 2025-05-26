@@ -5,27 +5,25 @@ mod models;
 
 use crate::ast::{ASTExecutionContext, JSONExpression};
 use crate::models::PassableValue::Function;
-use crate::models::{ExecutionContext, PassableMap, PassableValue};
 use crate::models::PassableValue::PMap;
+use crate::models::{ExecutionContext, PassableMap, PassableValue};
 use crate::ExecutableType::{CompiledProgram, AST};
-use async_trait::async_trait;
 use cel_interpreter::extractors::This;
 use cel_interpreter::objects::{Key, Map, TryIntoValue};
 use cel_interpreter::{Context, ExecutionError, Expression, FunctionContext, Program, Value};
+use cel_parser::parse;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Debug;
+use std::future::Future;
 use std::ops::Deref;
-use std::sync::{Arc, mpsc, Mutex};
-use std::thread::spawn;
-use cel_parser::parse;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Poll, Waker};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::spawn_local;
-#[cfg(not(target_arch = "wasm32"))]
-use futures_lite::future::block_on;
-use uniffi::deps::log::__private_api::log;
 
 
 /**
@@ -43,11 +41,15 @@ pub trait HostContext: Send + Sync {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-#[async_trait]
 pub trait HostContext: Send + Sync {
-    async fn computed_property(&self, name: String, args: String) -> String;
+    fn computed_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) -> String;
 
-    async fn device_property(&self, name: String, args: String) -> String;
+    fn device_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) -> String;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub trait ResultCallback: Send + Sync {
+    fn on_result(&self, result: String);
 }
 
 /**
@@ -109,9 +111,15 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
     let data: Result<ExecutionContext,_> = serde_json::from_str(definition.as_str());
     let data: ExecutionContext = match data {
         Ok(data) => data,
-        Err(_) => {
-            let e : Result<ExecutionContext, String> = Err("Invalid execution context JSON".to_string());
-            return serde_json::to_string(&e).unwrap()
+        Err(e) => {
+            let mut error_message = format!("Invalid execution context JSON: {}", e);
+            // If there's a source (cause), add it
+            if let Some(source) = e.source() {
+                error_message = format!("{}\nCaused by: {}", error_message, source);
+            }
+
+            let error_result: Result<_, String> = Err::<ASTExecutionContext,String>(error_message);
+            return serde_json::to_string(&error_result).unwrap()
         }
     };
     let compiled = Program::compile(data.expression.as_str())
@@ -208,23 +216,44 @@ fn execute_with(
             } else {
                 serde_json::to_string::<Vec<PassableValue>>(&vec![])
             };
-            match args {
+            let shared = Arc::new(Mutex::new(SharedState {
+                result: None,
+                waker: None,
+            }));
+            let callback = CallbackFuture {
+                shared: shared.clone(),
+            };
+
+            let result: Result<_,String> = match args {
                 Ok(args) => {
                     match prop_type {
                         PropType::Computed => Ok(ctx.computed_property(
                             name.clone().to_string(),
                             args,
-                        ).await),
+                            Arc::new(callback),
+                        )),
                         PropType::Device => Ok(ctx.device_property(
                             name.clone().to_string(),
                             args,
-                        ).await),
+                            Arc::new(callback),
+                        )),
                     }
                 }
                 Err(e) => {
                     Err(ExecutionError::UndeclaredReference(name).to_string())
                 }
+            };
+
+            match result {
+                Ok(_) => {
+                    let future = CallbackFuture { shared  }.await;
+                    Ok(future)
+                }
+                Err(e) => {
+                    Err(e)
+                }
             }
+
         });
         // Deserialize the value
         let passable: Result<PassableValue, String> =
@@ -451,6 +480,39 @@ impl fmt::Display for DisplayableError {
     }
 }
 
+// We use this to turn the ResultCallback into a future we can await
+impl ResultCallback for CallbackFuture {
+    fn on_result(&self, result: String) {
+        let mut shared = self.shared.lock().unwrap(); // Now valid
+        shared.result = Some(result);
+        if let Some(waker) = shared.waker.take() {
+            waker.wake();
+        }
+    }
+}
+
+pub struct CallbackFuture {
+    shared: Arc<Mutex<SharedState>>,
+}
+
+struct SharedState {
+    result: Option<String>,
+    waker: Option<Waker>,
+}
+
+impl Future for CallbackFuture {
+    type Output = String;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let mut shared = self.shared.lock().unwrap();
+        if let Some(result) = shared.result.take() {
+            Poll::Ready(result)
+        } else {
+            shared.waker = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,14 +521,17 @@ mod tests {
         map: HashMap<String, String>,
     }
 
-    #[async_trait]
     impl HostContext for TestContext {
-        async fn computed_property(&self, name: String, args: String) -> String {
-            self.map.get(&name).unwrap().to_string()
+        fn computed_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>)-> String {
+            let result = self.map.get(&name).unwrap().to_string();
+            callback.on_result(result.clone());
+            result
         }
 
-        async fn device_property(&self, name: String, args: String) -> String {
-            self.map.get(&name).unwrap().to_string()
+        fn device_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) -> String  {
+            let result = self.map.get(&name).unwrap().to_string();
+            callback.on_result(result.clone());
+            result
         }
     }
 
