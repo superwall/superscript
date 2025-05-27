@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 0.2.6
+
+### Enhancements
+
+- Removes string return requirement from HostContext methods
+
+## 0.2.5
+
+### Enhancements
+- Moves the HostContext to a Sync version with callback
+- Updates Android NDK to support 16kb page sizes
+- Updates Uniffi version
+
 ## 0.2.4
 - Fix aarch64 build for Android
 
