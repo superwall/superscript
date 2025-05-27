@@ -42,9 +42,9 @@ pub trait HostContext: Send + Sync {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub trait HostContext: Send + Sync {
-    fn computed_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) -> String;
+    fn computed_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>);
 
-    fn device_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) -> String;
+    fn device_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -525,16 +525,14 @@ mod tests {
     }
 
     impl HostContext for TestContext {
-        fn computed_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>)-> String {
+        fn computed_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) {
             let result = self.map.get(&name).unwrap().to_string();
-            callback.on_result(result.clone());
-            result
+            callback.on_result(result);
         }
 
-        fn device_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) -> String  {
+        fn device_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) {
             let result = self.map.get(&name).unwrap().to_string();
-            callback.on_result(result.clone());
-            result
+            callback.on_result(result);
         }
     }
 
