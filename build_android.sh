@@ -4,7 +4,7 @@ set -e
 
 echo "Building for Android x86_64, armv7, aarch64:"
 
-export ANDROID_NDK=r25b ANDROID_SDK=26 ANDROID_VERSION=11.0.0_r48
+export ANDROID_NDK=r28b ANDROID_SDK=26 ANDROID_VERSION=11.0.0_r48
 
 build_targets=(
     "x86_64-linux-android"
@@ -13,6 +13,8 @@ build_targets=(
     "i686-linux-android"
 )
 
+## If this fails, ensure you are using proper login to ghcr.io - create a new github PAT
+## echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
 export CROSS_NO_WARNINGS=0
 for target in "${build_targets[@]}"; do
     rustup target add "$target"

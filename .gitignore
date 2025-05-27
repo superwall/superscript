@@ -1,4 +1,6 @@
-./wasm/pkg
+./wasm/pkg/
+./wasm/example/browser/build/
+./copy_to_ios_repo.sh
 **/node_modules
 .DS_Store
 **/.DS_Store

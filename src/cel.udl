@@ -1,10 +1,12 @@
+[Trait]
+interface ResultCallback {
+    void on_result(string result);
+};
+
 [Trait, WithForeign]
 interface HostContext {
-   [Async]
-   string computed_property(string name, string args);
-   [Async]
-   string device_property(string name, string args);
-
+   string computed_property(string name, string args, ResultCallback callback);
+   string device_property(string name, string args, ResultCallback callback);
 };
 
 namespace cel {
