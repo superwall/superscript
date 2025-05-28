@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 0.2.8
+
+### Enhancements
+
+- Pass linker flags for 16kb architecture on Android
+
+## 0.2.7
+
+- Version bump
+
 ## 0.2.6
 
 ### Enhancements
