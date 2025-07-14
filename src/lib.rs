@@ -17,7 +17,6 @@ use std::error::Error;
 use std::fmt;
 use std::fmt::Debug;
 use std::future::Future;
-use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
@@ -136,7 +135,7 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
                 .map_err(|err| err.to_string())
 
         }
-        Err(e) =>
+        Err(_e) =>
             Err("Failed to compile expression".to_string())
     };
     serde_json::to_string(&result).unwrap()
@@ -239,7 +238,7 @@ fn execute_with(
                         )),
                     }
                 }
-                Err(e) => {
+                Err(_e) => {
                     Err(ExecutionError::UndeclaredReference(name).to_string())
                 }
             };
@@ -362,10 +361,10 @@ fn execute_with(
         .map(|(k, v)| (k.clone(), v.clone()))
         .into_iter();
 
-    let mut device_properties_clone = device.clone().clone();
+    let device_properties_clone = device.clone().clone();
     // Add those functions to the context
     for it in host_properties {
-        let mut value = device_properties_clone.clone();
+        let value = device_properties_clone.clone();
         let key = it.0.clone();
         let host_clone = Arc::clone(&host); // Clone the Arc to pass into the closure
         let key_str = key.clone(); // Clone key for usage in the closure
@@ -379,7 +378,7 @@ fn execute_with(
                 let host = host_clone.lock(); // Lock the host for safe access
                 match host {
                     Ok(host) => {
-                        prop_for(
+                        let prop_result = prop_for(
                             if device.contains_key(&it.0)
                             { PropType::Device } else { PropType::Computed },
                             name.clone(),
@@ -391,10 +390,15 @@ fn execute_with(
                                     .collect(),
                             ),
                             &*host,
-                        )
-                            .map_or(Err(ExecutionError::UndeclaredReference(name)), |v| {
-                                Ok(v.to_cel())
-                            })
+                        );
+                        
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let result = prop_result.unwrap_or(PassableValue::Null);
+                        
+                        #[cfg(target_arch = "wasm32")]
+                        let result = prop_result.unwrap_or(PassableValue::Null);
+                        
+                        Ok(result.to_cel())
                     }
                     Err(e) => {
                         let e = e.to_string();
@@ -412,8 +416,16 @@ fn execute_with(
         CompiledProgram(program) => &program.execute(&ctx),
     };
 
+    // Handle undeclared reference errors and missing key errors by returning null
     val.clone().map(|val| DisplayableValue(val.clone()))
-        .map_err(|err| DisplayableError(err))
+        .or_else(|err| {
+            let error_string = err.to_string();
+            match err {
+                ExecutionError::UndeclaredReference(_) => Ok(DisplayableValue(Value::Null)),
+                _ if error_string.starts_with("No such key:") => Ok(DisplayableValue(Value::Null)),
+                _ => Err(DisplayableError(err))
+            }
+        })
 }
 
 pub fn maybe(
@@ -525,12 +537,12 @@ mod tests {
     }
 
     impl HostContext for TestContext {
-        fn computed_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) {
+        fn computed_property(&self, name: String, _args: String, callback: Arc<dyn ResultCallback>) {
             let result = self.map.get(&name).unwrap().to_string();
             callback.on_result(result);
         }
 
-        fn device_property(&self, name: String, args: String, callback: Arc<dyn ResultCallback>) {
+        fn device_property(&self, name: String, _args: String, callback: Arc<dyn ResultCallback>) {
             let result = self.map.get(&name).unwrap().to_string();
             callback.on_result(result);
         }
@@ -582,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_function_with_arg_fails_with_undeclared_ref() {
+    fn test_unknown_function_with_arg_returns_null() {
         let ctx = Arc::new(TestContext {
             map: HashMap::new(),
         });
@@ -594,14 +606,14 @@ mod tests {
              "map" : {
                     "foo": {"type": "int", "value": 100}
             }},
-            "expression": "test_custom_func(foo) == 101"
+            "expression": "test_custom_func(foo)"
         }
 
         "#
                 .to_string(),
             ctx,
         );
-        assert_eq!(res, "{\"Err\":\"Undeclared reference to 'test_custom_func'\"}");
+        assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
     }
 
     #[test]
@@ -671,7 +683,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execution_with_failure() {
+    async fn test_execution_with_missing_key_returns_null() {
         let ctx = Arc::new(TestContext {
             map: HashMap::new(),
         });
@@ -699,7 +711,8 @@ mod tests {
             ctx,
         );
         println!("{}", res.clone());
-        assert_eq!(res, "{\"Err\":\"No such key: should_display\"}");
+        // user.should_display returns null, so null == true is null, and null && true is null
+        assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
     }
 
     #[tokio::test]
@@ -731,7 +744,8 @@ mod tests {
             ctx,
         );
         println!("{}", res.clone());
-        assert_eq!(res, "{\"Err\":\"No such key: should_display\"}");
+        // user.should_display returns null (missing key), so null == true is null
+        assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
     }
     #[tokio::test]
     async fn test_execution_with_platform_computed_reference() {
@@ -895,6 +909,147 @@ mod tests {
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
     }
 
+    #[tokio::test]
+    async fn test_execution_with_platform_device_function_and_unknown_property() {
+        let days_since = PassableValue::UInt(7);
+        let days_since = serde_json::to_string(&days_since).unwrap();
+        let ctx = Arc::new(TestContext {
+            map: [("minutesSince".to_string(), days_since)]
+                .iter()
+                .cloned()
+                .collect(),
+        });
+        let res = evaluate_with_context(
+            r#"
+    {
+        "variables": {
+            "map": {
+                "device": {
+                    "type": "map",
+                    "value": {
+                        "trial_days": {
+                            "type": "uint",
+                            "value": 7
+                        }
+                    }
+                }
+            }
+        },
+        "expression": "has(device.something) || 100",
+        "computed": {
+            "daysSince": [
+                {
+                    "type": "string",
+                    "value": "event_name"
+                }
+            ]
+        },
+        "device": {
+            "daysSince": [
+                {
+                    "type": "string",
+                    "value": "event_name"
+                }
+            ]
+        }
+    }"#.to_string(),
+            ctx,
+        );
+        println!("{}", res.clone());
+        // has(device.something) returns false, so false || 100 = 100
+        assert_eq!(res, "{\"Ok\":{\"type\":\"int\",\"value\":100}}");
+    }
+
+
+
+    #[test]
+    fn test_undeclared_function_returns_null() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        
+        let res = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {}},
+            "expression": "unknownFunction('test')",
+            "computed": {
+                "knownFunction": [
+                    {
+                        "type": "string",
+                        "value": "test"
+                    }
+                ]
+            }
+        }
+        "#.to_string(),
+            ctx,
+        );
+        
+        // Should return null because unknownFunction is not defined
+        assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
+    }
+
+
+    #[test]
+    fn test_missing_key_returns_null() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        
+        let res = evaluate_with_context(
+            r#"
+        {
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "existing_key": {
+                                "type": "string",
+                                "value": "test"
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.nonexistent_key == null"
+        }
+        "#.to_string(),
+            ctx,
+        );
+        
+        // Should return null instead of error for missing keys
+        assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
+    }
+
+    #[test]
+    fn test_comprehensive_null_behavior() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        
+        // Test 1: Unknown function returns null
+        let res1 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "unknownFunction()"}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res1, "{\"Ok\":{\"type\":\"Null\"}}");
+        
+        // Test 2: Missing map key returns null
+        let res2 = evaluate_with_context(
+            r#"{"variables": {"map": {"obj": {"type": "map", "value": {}}}}, "expression": "obj.missing_key"}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"Null\"}}");
+        
+        // Test 3: Null comparison in CEL (null == null is null, not true)
+        let res3 = evaluate_with_context(
+            r#"{"variables": {"map": {"obj": {"type": "map", "value": {}}}}, "expression": "obj.missing_key == null"}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res3, "{\"Ok\":{\"type\":\"Null\"}}");
+    }
 
     #[test]
     fn test_parse_to_ast() {
