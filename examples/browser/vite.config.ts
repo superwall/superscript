@@ -8,5 +8,6 @@ import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
   plugins: [react(), topLevelAwait(), wasmPlugin()],
+  base: '/superscript/',
 })
 
