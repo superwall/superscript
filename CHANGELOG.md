@@ -1,5 +1,13 @@
 # CHANGELOG
 
+
+## 0.3.0
+
+## Enhancements
+- Adds truthiness and string normalization so value such as "true", "false", "1.1" etc are treated as true, false, 1.1
+## Truthiness
+- Fixes issues with undeclared references for properties and functions by wrapping them in a has(x)? x : Null tertiary expression
+
 ## 0.2.8
 
 ### Enhancements
