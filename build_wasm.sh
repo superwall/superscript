@@ -7,7 +7,7 @@ cargo build --lib --release --target wasm32-unknown-unknown
 echo " 25% - WASM build successful ✅"
 echo " 25% - Ensuring WASM wrapper is built"
 cd wasm
-cargo build --lib --release --target wasm32-unknown-unknown
+RUSTFLAGS='-C target-feature=+bulk-memory' cargo build --lib --release --target wasm32-unknown-unknown
 echo "50% - WASM wrapper build successful ✅"
 
 echo "50% - Building JS bundles"
