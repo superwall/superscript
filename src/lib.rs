@@ -313,8 +313,7 @@ fn execute_with(
         // Deserialize the value
         let passable: Option<PassableValue> = serde_json::from_str(val.as_str())
             .unwrap_or(Some(PassableValue::Null))
-            .map(|val| normalize_variables(val))
-            .map_err(|err| err.to_string());
+            .map(|val| normalize_variables(val));
 
         passable
     }
