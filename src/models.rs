@@ -3,21 +3,20 @@ use cel_interpreter::objects::{Key, Map};
 use cel_interpreter::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub(crate) struct ExecutionContext {
     pub(crate) variables: PassableMap,
     pub(crate) expression: String,
     pub(crate) computed: Option<HashMap<String, Vec<PassableValue>>>,
-    pub(crate) device: Option<HashMap<String, Vec<PassableValue>>>
+    pub(crate) device: Option<HashMap<String, Vec<PassableValue>>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PassableMap {
     pub map: HashMap<String, PassableValue>,
-    
 }
 
 impl PassableMap {
@@ -96,17 +95,14 @@ impl fmt::Display for PassableValue {
                 write!(f, "[{}]", elements.join(", "))
             }
             PassableValue::PMap(map) => {
-                let entries: Vec<String> = map.iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
-                    .collect();
+                let entries: Vec<String> =
+                    map.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
                 write!(f, "{{{}}}", entries.join(", "))
             }
-            PassableValue::Function(name, args) => {
-                match args {
-                    Some(args) => write!(f, "{}({})", name, args),
-                    None => write!(f, "{}()", name),
-                }
-            }
+            PassableValue::Function(name, args) => match args {
+                Some(args) => write!(f, "{}({})", name, args),
+                None => write!(f, "{}()", name),
+            },
             PassableValue::Int(i) => write!(f, "Int: {}", i),
             PassableValue::UInt(u) => write!(f, "UInt: {}", u),
             PassableValue::Float(fl) => write!(f, "Float {}", fl),

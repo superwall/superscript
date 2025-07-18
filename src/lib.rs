@@ -25,7 +25,6 @@ use std::task::{Poll, Waker};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::spawn_local;
 
-
 /**
  * Host context trait that defines the methods that the host context should implement,
  * i.e. iOS or Android calling code. This trait is used to resolve dynamic properties in the
@@ -59,12 +58,13 @@ pub trait ResultCallback: Send + Sync {
  * @return The result of the evaluation, either "true" or "false"
  */
 pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>) -> String {
-    let data: Result<ASTExecutionContext,_> = serde_json::from_str(definition.as_str());
+    let data: Result<ASTExecutionContext, _> = serde_json::from_str(definition.as_str());
     let data = match data {
         Ok(data) => data,
         Err(_) => {
-            let e : Result<_, String> = Err::<ASTExecutionContext,String>("Invalid execution context JSON".to_string());
-            return serde_json::to_string(&e).unwrap()
+            let e: Result<_, String> =
+                Err::<ASTExecutionContext, String>("Invalid execution context JSON".to_string());
+            return serde_json::to_string(&e).unwrap();
         }
     };
     let host = host.clone();
@@ -76,8 +76,9 @@ pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>)
         data.computed,
         data.device,
         host,
-    ).map(|val| val.to_passable())
-        .map_err(|err| err.to_string());
+    )
+    .map(|val| val.to_passable())
+    .map_err(|err| err.to_string());
     serde_json::to_string(&res).unwrap()
 }
 
@@ -87,16 +88,18 @@ pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>)
  * @return The result of the evaluation, either "true" or "false"
  */
 pub fn evaluate_ast(ast: String) -> String {
-    let data: Result<JSONExpression,_> = serde_json::from_str(ast.as_str());
-    let data : JSONExpression = match data {
+    let data: Result<JSONExpression, _> = serde_json::from_str(ast.as_str());
+    let data: JSONExpression = match data {
         Ok(data) => data,
         Err(_) => {
-            let e : Result<_, String> = Err::<JSONExpression,String>("Invalid definition for AST Execution".to_string());
-            return serde_json::to_string(&e).unwrap()
+            let e: Result<_, String> =
+                Err::<JSONExpression, String>("Invalid definition for AST Execution".to_string());
+            return serde_json::to_string(&e).unwrap();
         }
     };
     let ctx = Context::default();
-    let res = ctx.resolve(&data.into())
+    let res = ctx
+        .resolve(&data.into())
         .map(|val| DisplayableValue(val.clone()).to_passable())
         .map_err(|err| DisplayableError(err).to_string());
     serde_json::to_string(&res).unwrap()
@@ -110,7 +113,7 @@ pub fn evaluate_ast(ast: String) -> String {
  */
 
 pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> String {
-    let data: Result<ExecutionContext,_> = serde_json::from_str(definition.as_str());
+    let data: Result<ExecutionContext, _> = serde_json::from_str(definition.as_str());
     let data: ExecutionContext = match data {
         Ok(data) => data,
         Err(e) => {
@@ -120,8 +123,8 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
                 error_message = format!("{}\nCaused by: {}", error_message, source);
             }
 
-            let error_result: Result<_, String> = Err::<ASTExecutionContext,String>(error_message);
-            return serde_json::to_string(&error_result).unwrap()
+            let error_result: Result<_, String> = Err::<ASTExecutionContext, String>(error_message);
+            return serde_json::to_string(&error_result).unwrap();
         }
     };
     // Parse the expression and transform it for null safety
@@ -135,11 +138,11 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
                 data.computed,
                 data.device,
                 host,
-            ).map(|val| val.to_passable())
-                .map_err(|err| err.to_string())
+            )
+            .map(|val| val.to_passable())
+            .map_err(|err| err.to_string())
         }
-        Err(_e) =>
-            Err("Failed to compile expression".to_string())
+        Err(_e) => Err("Failed to compile expression".to_string()),
     };
     serde_json::to_string(&result).unwrap()
 }
@@ -151,8 +154,7 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
  */
 pub fn parse_to_ast(expression: String) -> String {
     let ast: Result<JSONExpression, _> = parse(expression.as_str()).map(|expr| expr.into());
-    let ast = ast
-        .map_err(|err| err.to_string());
+    let ast = ast.map_err(|err| err.to_string());
     serde_json::to_string(&ast.unwrap()).unwrap()
 }
 
@@ -183,7 +185,12 @@ fn execute_with(
     let mut ctx = Context::default();
     // Isolate device to re-bind later
     let device_map = variables.clone();
-    let device_map = device_map.map.get("device").clone().unwrap_or(&PMap(HashMap::new())).clone();
+    let device_map = device_map
+        .map
+        .get("device")
+        .clone()
+        .unwrap_or(&PMap(HashMap::new()))
+        .clone();
 
     // Add predefined variables locally to the context
     let standardized_variables = variables
@@ -192,28 +199,28 @@ fn execute_with(
         .map(|it| {
             let next = normalize_variables(it.1.clone());
             (it.0.clone(), next)
-        }).collect();
+        })
+        .collect();
 
     let variables = PassableMap::new(standardized_variables);
 
-    variables
-        .map
-        .iter()
-        .for_each(|it| {
-            let _ = ctx.add_variable(it.0.as_str(), it.1.to_cel());
-        });
+    variables.map.iter().for_each(|it| {
+        let _ = ctx.add_variable(it.0.as_str(), it.1.to_cel());
+    });
 
     // Add maybe function
     ctx.add_function("maybe", maybe);
-    
+
     // Add fallbacks for unknown functions that return null
     // This is a workaround for unknown function calls
-    ctx.add_function("unknownFunction", |_: &FunctionContext| -> Result<Value, ExecutionError> {
-        Ok(Value::Null)
-    });
-    ctx.add_function("test_custom_func", |_: &FunctionContext| -> Result<Value, ExecutionError> {
-        Ok(Value::Null)
-    });
+    ctx.add_function(
+        "unknownFunction",
+        |_: &FunctionContext| -> Result<Value, ExecutionError> { Ok(Value::Null) },
+    );
+    ctx.add_function(
+        "test_custom_func",
+        |_: &FunctionContext| -> Result<Value, ExecutionError> { Ok(Value::Null) },
+    );
 
     // This function is used to extract the value of a property from the host context
     // As UniFFi doesn't support recursive enums yet, we have to pass it in as a
@@ -223,7 +230,7 @@ fn execute_with(
         Computed,
         Device,
     }
-    
+
     // Calls functions from the host's computed or device properties
     #[cfg(not(target_arch = "wasm32"))]
     fn prop_for(
@@ -248,49 +255,40 @@ fn execute_with(
                 shared: shared.clone(),
             };
 
-            let result: Result<_,String> = match args {
-                Ok(args) => {
-                    match prop_type {
-                        PropType::Computed => Ok(ctx.computed_property(
-                            name.clone().to_string(),
-                            args,
-                            Arc::new(callback),
-                        )),
-                        PropType::Device => Ok(ctx.device_property(
-                            name.clone().to_string(),
-                            args,
-                            Arc::new(callback),
-                        )),
+            let result: Result<_, String> = match args {
+                Ok(args) => match prop_type {
+                    PropType::Computed => Ok(ctx.computed_property(
+                        name.clone().to_string(),
+                        args,
+                        Arc::new(callback),
+                    )),
+                    PropType::Device => {
+                        Ok(ctx.device_property(name.clone().to_string(), args, Arc::new(callback)))
                     }
-                }
-                Err(_e) => {
-                    Err(ExecutionError::UndeclaredReference(name).to_string())
-                }
+                },
+                Err(_e) => Err(ExecutionError::UndeclaredReference(name).to_string()),
             };
 
             match result {
                 Ok(_) => {
-                    let future = CallbackFuture { shared  }.await;
+                    let future = CallbackFuture { shared }.await;
                     Ok(future)
                 }
-                Err(e) => {
-                    Err(e)
-                }
+                Err(e) => Err(e),
             }
-
         });
         // Deserialize the value
-        let passable: Result<PassableValue, String> =
-            val.map(|val| serde_json::from_str(val.as_str()).unwrap_or(PassableValue::Null))
-                .map(|val| {
-                    // Standardize the value ("true" to true, "1" to 1 etc...)
-                    normalize_variables(val)
-                })
-                .map_err(|err| err.to_string());
+        let passable: Result<PassableValue, String> = val
+            .map(|val| serde_json::from_str(val.as_str()).unwrap_or(PassableValue::Null))
+            .map(|val| {
+                // Standardize the value ("true" to true, "1" to 1 etc...)
+                normalize_variables(val)
+            })
+            .map_err(|err| err.to_string());
 
         passable
     }
-    
+
     #[cfg(target_arch = "wasm32")]
     fn prop_for(
         prop_type: PropType,
@@ -303,18 +301,19 @@ fn execute_with(
         let val = match prop_type {
             PropType::Computed => ctx.computed_property(
                 name.clone().to_string(),
-                serde_json::to_string(&args).expect("Failed to serialize args for computed property"),
+                serde_json::to_string(&args)
+                    .expect("Failed to serialize args for computed property"),
             ),
             PropType::Device => ctx.device_property(
                 name.clone().to_string(),
-                serde_json::to_string(&args).expect("Failed to serialize args for computed property"),
+                serde_json::to_string(&args)
+                    .expect("Failed to serialize args for computed property"),
             ),
         };
         // Deserialize the value
-        let passable: Option<PassableValue> = serde_json::from_str(val.as_str()).unwrap_or(Some(PassableValue::Null))
-            .map(|val| {
-                normalize_variables(val)
-            })
+        let passable: Option<PassableValue> = serde_json::from_str(val.as_str())
+            .unwrap_or(Some(PassableValue::Null))
+            .map(|val| normalize_variables(val))
             .map_err(|err| err.to_string());
 
         passable
@@ -342,7 +341,6 @@ fn execute_with(
 
     let device = device.unwrap_or(HashMap::new()).clone();
 
-
     // From defined properties the device properties
     let total_device_properties = if let PMap(map) = device_map {
         map
@@ -365,11 +363,13 @@ fn execute_with(
                 Key::String(Arc::new(name.clone())),
                 Function(name, args).to_cel(),
             )
-
         })
         .chain(total_device_properties.iter().map(|(k, v)| {
-                let mapped_val = normalize_variables(v.clone());
-                (Key::String(Arc::new(k.clone())), mapped_val.to_cel().clone())
+            let mapped_val = normalize_variables(v.clone());
+            (
+                Key::String(Arc::new(k.clone())),
+                mapped_val.to_cel().clone(),
+            )
         }))
         .collect();
 
@@ -388,7 +388,6 @@ fn execute_with(
             map: Arc::new(device_host_properties),
         }),
     );
-
 
     let binding = device.clone();
     // Combine the device and computed properties
@@ -416,31 +415,38 @@ fn execute_with(
                 match host {
                     Ok(host) => {
                         let prop_result = prop_for(
-                            if device.contains_key(&it.0)
-                            { PropType::Device } else { PropType::Computed },
+                            if device.contains_key(&it.0) {
+                                PropType::Device
+                            } else {
+                                PropType::Computed
+                            },
                             name.clone(),
                             Some(
                                 args.iter()
                                     .map(|expression| {
-                                        DisplayableValue(ftx.ptx.resolve(expression).unwrap()).to_passable()
+                                        DisplayableValue(ftx.ptx.resolve(expression).unwrap())
+                                            .to_passable()
                                     })
                                     .collect(),
                             ),
                             &*host,
                         );
-                        
+
                         #[cfg(not(target_arch = "wasm32"))]
                         let result = prop_result.unwrap_or(PassableValue::Null);
-                        
+
                         #[cfg(target_arch = "wasm32")]
                         let result = prop_result.unwrap_or(PassableValue::Null);
-                        
+
                         Ok(result.to_cel())
                     }
                     Err(e) => {
                         let e = e.to_string();
                         let name = name.clone().to_string();
-                        let error = ExecutionError::FunctionError { function: name, message: e };
+                        let error = ExecutionError::FunctionError {
+                            function: name,
+                            message: e,
+                        };
                         Err(error)
                     }
                 }
@@ -466,25 +472,26 @@ fn execute_with(
                         result
                     }
                 }
-                _ => result
+                _ => result,
             }
-        },
+        }
         CompiledProgram(program) => {
             let result = program.execute(&ctx);
             // Convert certain errors to null for graceful handling
             match result {
                 Err(ref err) => {
                     let error_msg = err.to_string();
-                    if error_msg.contains("Undeclared reference") || 
-                       error_msg.contains("Unknown function") {
+                    if error_msg.contains("Undeclared reference")
+                        || error_msg.contains("Unknown function")
+                    {
                         Ok(Value::Null)
                     } else {
                         result
                     }
                 }
-                _ => result
+                _ => result,
             }
-        },
+        }
     };
 
     val.map(|val| DisplayableValue(val.clone()))
@@ -523,7 +530,7 @@ pub fn normalize_variables(passable_value: PassableValue) -> PassableValue {
             let new_list = list.into_iter().map(normalize_variables).collect();
             PassableValue::List(new_list)
         }
-        _ => passable_value
+        _ => passable_value,
     }
 }
 
@@ -534,17 +541,17 @@ fn is_number(passable: PassableValue) -> PassableValue {
                 Ok(i) => return PassableValue::Int(i),
                 _ => {}
             }
-            match data.parse::<u64>(){
+            match data.parse::<u64>() {
                 Ok(i) => return PassableValue::UInt(i),
                 _ => {}
             }
-            match data.parse::<f64>(){
+            match data.parse::<f64>() {
                 Ok(i) => return PassableValue::Float(i),
                 _ => {}
             }
             passable
-        },
-        _ => passable
+        }
+        _ => passable,
     }
 }
 
@@ -569,18 +576,25 @@ fn transform_expression_for_null_safety_internal(expr: Expression, inside_has: b
             // If we're inside a has() function, don't transform - let has() work normally
             if inside_has {
                 Expression::Member(
-                    Box::new(transform_expression_for_null_safety_internal(*operand, inside_has)),
-                    member
+                    Box::new(transform_expression_for_null_safety_internal(
+                        *operand, inside_has,
+                    )),
+                    member,
                 )
             } else {
                 // Transform obj.property to: has(obj.property) ? obj.property : null
-                let transformed_operand = Box::new(transform_expression_for_null_safety_internal(*operand, inside_has));
+                let transformed_operand = Box::new(transform_expression_for_null_safety_internal(
+                    *operand, inside_has,
+                ));
 
                 // Create has(obj.property) condition
                 let has_call = Expression::FunctionCall(
                     Box::new(Expression::Ident(Arc::new("has".to_string()))),
                     None,
-                    vec![Expression::Member(transformed_operand.clone(), member.clone())],
+                    vec![Expression::Member(
+                        transformed_operand.clone(),
+                        member.clone(),
+                    )],
                 );
 
                 // Create the conditional: has(obj.property) ? obj.property : null
@@ -599,76 +613,116 @@ fn transform_expression_for_null_safety_internal(expr: Expression, inside_has: b
             };
 
             // Recursively transform function arguments
-            let transformed_func = Box::new(transform_expression_for_null_safety_internal(*func, inside_has));
-            let transformed_this = this_expr.map(|e| Box::new(transform_expression_for_null_safety_internal(*e, inside_has)));
-            let transformed_args = args.into_iter()
-                .map(|arg| transform_expression_for_null_safety_internal(arg, is_has_function || inside_has))
+            let transformed_func = Box::new(transform_expression_for_null_safety_internal(
+                *func, inside_has,
+            ));
+            let transformed_this = this_expr.map(|e| {
+                Box::new(transform_expression_for_null_safety_internal(
+                    *e, inside_has,
+                ))
+            });
+            let transformed_args = args
+                .into_iter()
+                .map(|arg| {
+                    transform_expression_for_null_safety_internal(
+                        arg,
+                        is_has_function || inside_has,
+                    )
+                })
                 .collect();
             Expression::FunctionCall(transformed_func, transformed_this, transformed_args)
         }
         Expression::Ternary(condition, if_true, if_false) => {
             // Recursively transform ternary expressions
             Expression::Ternary(
-                Box::new(transform_expression_for_null_safety_internal(*condition, inside_has)),
-                Box::new(transform_expression_for_null_safety_internal(*if_true, inside_has)),
-                Box::new(transform_expression_for_null_safety_internal(*if_false, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(
+                    *condition, inside_has,
+                )),
+                Box::new(transform_expression_for_null_safety_internal(
+                    *if_true, inside_has,
+                )),
+                Box::new(transform_expression_for_null_safety_internal(
+                    *if_false, inside_has,
+                )),
             )
         }
         Expression::Relation(lhs, op, rhs) => {
             // Recursively transform relation operands
             Expression::Relation(
-                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(
+                    *lhs, inside_has,
+                )),
                 op,
-                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(
+                    *rhs, inside_has,
+                )),
             )
         }
         Expression::Arithmetic(lhs, op, rhs) => {
             // Recursively transform arithmetic operands
             Expression::Arithmetic(
-                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(
+                    *lhs, inside_has,
+                )),
                 op,
-                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(
+                    *rhs, inside_has,
+                )),
             )
         }
         Expression::Unary(op, operand) => {
             // Recursively transform unary operand
-            Expression::Unary(op, Box::new(transform_expression_for_null_safety_internal(*operand, inside_has)))
+            Expression::Unary(
+                op,
+                Box::new(transform_expression_for_null_safety_internal(
+                    *operand, inside_has,
+                )),
+            )
         }
         Expression::List(elements) => {
             // Recursively transform list elements
-            let transformed_elements = elements.into_iter()
+            let transformed_elements = elements
+                .into_iter()
                 .map(|e| transform_expression_for_null_safety_internal(e, inside_has))
                 .collect();
             Expression::List(transformed_elements)
         }
-        Expression::And(lhs, rhs) => {
-            Expression::And(
-                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
-                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
-            )
-        }
-        Expression::Or(lhs, rhs) => {
-            Expression::Or(
-                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
-                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
-            )
-        }
+        Expression::And(lhs, rhs) => Expression::And(
+            Box::new(transform_expression_for_null_safety_internal(
+                *lhs, inside_has,
+            )),
+            Box::new(transform_expression_for_null_safety_internal(
+                *rhs, inside_has,
+            )),
+        ),
+        Expression::Or(lhs, rhs) => Expression::Or(
+            Box::new(transform_expression_for_null_safety_internal(
+                *lhs, inside_has,
+            )),
+            Box::new(transform_expression_for_null_safety_internal(
+                *rhs, inside_has,
+            )),
+        ),
         Expression::Map(entries) => {
-            let transformed_entries = entries.into_iter()
-                .map(|(k, v)| (transform_expression_for_null_safety_internal(k, inside_has), transform_expression_for_null_safety_internal(v, inside_has)))
+            let transformed_entries = entries
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        transform_expression_for_null_safety_internal(k, inside_has),
+                        transform_expression_for_null_safety_internal(v, inside_has),
+                    )
+                })
                 .collect();
             Expression::Map(transformed_entries)
         }
         Expression::Atom(ref atom) => {
             // Transform string literals "true" and "false" to boolean values
             match atom {
-                cel_parser::Atom::String(s) => {
-                    match s.as_str() {
-                        "true" => Expression::Atom(cel_parser::Atom::Bool(true)),
-                        "false" => Expression::Atom(cel_parser::Atom::Bool(false)),
-                        _ => expr,
-                    }
-                }
+                cel_parser::Atom::String(s) => match s.as_str() {
+                    "true" => Expression::Atom(cel_parser::Atom::Bool(true)),
+                    "false" => Expression::Atom(cel_parser::Atom::Bool(false)),
+                    _ => expr,
+                },
                 _ => expr,
             }
         }
@@ -684,7 +738,6 @@ pub fn maybe(
 ) -> Result<Value, ExecutionError> {
     return ftx.ptx.resolve(&left).or_else(|_| ftx.ptx.resolve(&right));
 }
-
 
 // Wrappers around CEL values used so that we can create extensions on them
 pub struct DisplayableValue(Value);
@@ -786,7 +839,12 @@ mod tests {
     }
 
     impl HostContext for TestContext {
-        fn computed_property(&self, name: String, _args: String, callback: Arc<dyn ResultCallback>) {
+        fn computed_property(
+            &self,
+            name: String,
+            _args: String,
+            callback: Arc<dyn ResultCallback>,
+        ) {
             let result = self.map.get(&name).unwrap().to_string();
             callback.on_result(result);
         }
@@ -813,7 +871,7 @@ mod tests {
         }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
@@ -836,7 +894,7 @@ mod tests {
         }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
@@ -859,7 +917,7 @@ mod tests {
         }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
@@ -889,7 +947,7 @@ mod tests {
         }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
@@ -924,7 +982,7 @@ mod tests {
        }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -956,7 +1014,7 @@ mod tests {
        }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -989,7 +1047,7 @@ mod tests {
        }
 
         "#
-                .to_string(),
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -1065,7 +1123,8 @@ mod tests {
                 }
             ]
         }
-    }"#.to_string(),
+    }"#
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -1151,7 +1210,8 @@ mod tests {
                 }
             ]
         }
-    }"#.to_string(),
+    }"#
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -1201,7 +1261,8 @@ mod tests {
                 }
             ]
         }
-    }"#.to_string(),
+    }"#
+            .to_string(),
             ctx,
         );
         println!("{}", res.clone());
@@ -1209,14 +1270,12 @@ mod tests {
         assert_eq!(res, "{\"Ok\":{\"type\":\"int\",\"value\":100}}");
     }
 
-
-
     #[test]
     fn test_undeclared_function_returns_null() {
         let ctx = Arc::new(TestContext {
             map: HashMap::new(),
         });
-        
+
         let res = evaluate_with_context(
             r#"
         {
@@ -1231,22 +1290,21 @@ mod tests {
                 ]
             }
         }
-        "#.to_string(),
+        "#
+            .to_string(),
             ctx,
         );
-        
+
         // Should return null because unknownFunction is not defined
         assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
     }
-
-
 
     #[test]
     fn test_ast_transformation_property_access() {
         let ctx = Arc::new(TestContext {
             map: HashMap::new(),
         });
-        
+
         let res = evaluate_with_context(
             r#"
         {
@@ -1265,10 +1323,11 @@ mod tests {
             },
             "expression": "device.nonexistent_key == null"
         }
-        "#.to_string(),
+        "#
+            .to_string(),
             ctx,
         );
-        
+
         println!("AST transformation result: {}", res);
         // This should work with the transformation and return true
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
@@ -1279,7 +1338,7 @@ mod tests {
         let ctx = Arc::new(TestContext {
             map: HashMap::new(),
         });
-        
+
         let res = evaluate_with_context(
             r#"
         {
@@ -1298,10 +1357,11 @@ mod tests {
             },
             "expression": "device.nonexistent_key == null"
         }
-        "#.to_string(),
+        "#
+            .to_string(),
             ctx,
         );
-        
+
         // Should return null instead of error for missing keys
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
     }
@@ -1311,21 +1371,21 @@ mod tests {
         let ctx = Arc::new(TestContext {
             map: HashMap::new(),
         });
-        
+
         // Test 1: Unknown function returns null
         let res1 = evaluate_with_context(
             r#"{"variables": {"map": {}}, "expression": "unknownFunction() == null"}"#.to_string(),
             ctx.clone(),
         );
         assert_eq!(res1, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
-        
+
         // Test 2: Missing map key returns null
         let res2 = evaluate_with_context(
             r#"{"variables": {"map": {"obj": {"type": "map", "value": {}}}}, "expression": "obj.missing_key == null"}"#.to_string(),
             ctx.clone(),
         );
         assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
-        
+
         // Test 3: Null comparison in CEL (null == null is null, not true)
         let res3 = evaluate_with_context(
             r#"{"variables": {"map": {"obj": {"type": "map", "value": {}}}}, "expression": "obj.missing_key == null"}"#.to_string(),
@@ -1359,7 +1419,7 @@ mod tests {
         let ctx = Arc::new(TestContext {
             map: HashMap::new(),
         });
-        
+
         // Test simple boolean variable
         let simple_test = r#"
         {
@@ -1373,15 +1433,13 @@ mod tests {
             },
             "expression": "flag"
         }
-        "#.to_string();
+        "#
+        .to_string();
 
-        let res_simple = evaluate_with_context(
-            simple_test,
-            ctx.clone(),
-        );
+        let res_simple = evaluate_with_context(simple_test, ctx.clone());
         println!("Simple boolean test: {}", res_simple);
         assert_eq!(res_simple, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
-        
+
         let data = r#"
         {
             "variables": {
@@ -1399,15 +1457,13 @@ mod tests {
             },
             "expression": "device.existing_key == true"
         }
-        "#.to_string();
+        "#
+        .to_string();
 
         // Test string "true" becomes boolean true
-        let res1 = evaluate_with_context(
-            data,
-            ctx.clone(),
-        );
+        let res1 = evaluate_with_context(data, ctx.clone());
         assert_eq!(res1, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
-        
+
         // Test string "false" becomes boolean false
         let res2 = evaluate_with_context(
             r#"{
@@ -1425,7 +1481,8 @@ mod tests {
                 }
             },
             "expression": "device.existing_key == false"
-        }"#.to_string(),
+        }"#
+            .to_string(),
             ctx.clone(),
         );
         assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
@@ -1449,12 +1506,10 @@ mod tests {
             },
             "expression": "flag"
         }
-        "#.to_string();
+        "#
+        .to_string();
 
-        let res_simple = evaluate_with_context(
-            simple_test,
-            ctx.clone(),
-        );
+        let res_simple = evaluate_with_context(simple_test, ctx.clone());
         assert_eq!(res_simple, "{\"Ok\":{\"type\":\"int\",\"value\":1}}");
 
         let data = r#"
@@ -1474,14 +1529,15 @@ mod tests {
             },
             "expression": "device.existing_key"
         }
-        "#.to_string();
+        "#
+        .to_string();
 
         // Test string "true" becomes boolean true
-        let res1 = evaluate_with_context(
-            data,
-            ctx.clone(),
+        let res1 = evaluate_with_context(data, ctx.clone());
+        assert_eq!(
+            res1,
+            "{\"Ok\":{\"type\":\"uint\",\"value\":9223372036854775808}}"
         );
-        assert_eq!(res1, "{\"Ok\":{\"type\":\"uint\",\"value\":9223372036854775808}}");
 
         // Test string "false" becomes boolean false
         let res2 = evaluate_with_context(
@@ -1500,7 +1556,8 @@ mod tests {
                 }
             },
             "expression": "device.existing_key"
-        }"#.to_string(),
+        }"#
+            .to_string(),
             ctx.clone(),
         );
         assert_eq!(res2, "{\"Ok\":{\"type\":\"float\",\"value\":1.99999999}}");
