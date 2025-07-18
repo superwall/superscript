@@ -4,6 +4,7 @@ use cel_interpreter::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::fmt;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub(crate) struct ExecutionContext {
@@ -16,6 +17,13 @@ pub(crate) struct ExecutionContext {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PassableMap {
     pub map: HashMap<String, PassableValue>,
+    
+}
+
+impl PassableMap {
+    pub fn new(map: HashMap<String, PassableValue>) -> Self {
+        Self { map }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -76,6 +84,37 @@ impl PartialEq for PassableValue {
             (PassableValue::Float(a), PassableValue::Int(b)) => *a == (*b as f64),
             (PassableValue::Float(a), PassableValue::UInt(b)) => *a == (*b as f64),
             (_, _) => false,
+        }
+    }
+}
+
+impl fmt::Display for PassableValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PassableValue::List(list) => {
+                let elements: Vec<String> = list.iter().map(|v| v.to_string()).collect();
+                write!(f, "[{}]", elements.join(", "))
+            }
+            PassableValue::PMap(map) => {
+                let entries: Vec<String> = map.iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect();
+                write!(f, "{{{}}}", entries.join(", "))
+            }
+            PassableValue::Function(name, args) => {
+                match args {
+                    Some(args) => write!(f, "{}({})", name, args),
+                    None => write!(f, "{}()", name),
+                }
+            }
+            PassableValue::Int(i) => write!(f, "Int: {}", i),
+            PassableValue::UInt(u) => write!(f, "UInt: {}", u),
+            PassableValue::Float(fl) => write!(f, "Float {}", fl),
+            PassableValue::String(s) => write!(f, "String {}", s),
+            PassableValue::Bytes(b) => write!(f, "Bytes {:?}", b),
+            PassableValue::Bool(b) => write!(f, "Bool {}", b),
+            PassableValue::Timestamp(t) => write!(f, "TS: {}", t),
+            PassableValue::Null => write!(f, "null"),
         }
     }
 }

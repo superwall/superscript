@@ -17,6 +17,7 @@ use std::error::Error;
 use std::fmt;
 use std::fmt::Debug;
 use std::future::Future;
+use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
@@ -49,116 +50,6 @@ pub trait HostContext: Send + Sync {
 #[cfg(not(target_arch = "wasm32"))]
 pub trait ResultCallback: Send + Sync {
     fn on_result(&self, result: String);
-}
-
-/**
- * Transform an expression to replace property access with null-safe versions
- */
-fn transform_expression_for_null_safety(expr: Expression) -> Expression {
-    transform_expression_for_null_safety_internal(expr, false)
-}
-
-fn transform_expression_for_null_safety_internal(expr: Expression, inside_has: bool) -> Expression {
-    use cel_parser::Atom;
-
-    match expr {
-        Expression::Member(operand, member) => {
-            // If we're inside a has() function, don't transform - let has() work normally
-            if inside_has {
-                Expression::Member(
-                    Box::new(transform_expression_for_null_safety_internal(*operand, inside_has)),
-                    member
-                )
-            } else {
-                // Transform obj.property to: has(obj.property) ? obj.property : null
-                let transformed_operand = Box::new(transform_expression_for_null_safety_internal(*operand, inside_has));
-
-                // Create has(obj.property) condition
-                let has_call = Expression::FunctionCall(
-                    Box::new(Expression::Ident(Arc::new("has".to_string()))),
-                    None,
-                    vec![Expression::Member(transformed_operand.clone(), member.clone())],
-                );
-
-                // Create the conditional: has(obj.property) ? obj.property : null
-                Expression::Ternary(
-                    Box::new(has_call),
-                    Box::new(Expression::Member(transformed_operand, member)),
-                    Box::new(Expression::Atom(Atom::Null)),
-                )
-            }
-        }
-        Expression::FunctionCall(func, this_expr, args) => {
-            // Check if this is a has() function call
-            let is_has_function = match func.as_ref() {
-                Expression::Ident(ident) => ident.as_str() == "has",
-                _ => false,
-            };
-
-            // Recursively transform function arguments
-            let transformed_func = Box::new(transform_expression_for_null_safety_internal(*func, inside_has));
-            let transformed_this = this_expr.map(|e| Box::new(transform_expression_for_null_safety_internal(*e, inside_has)));
-            let transformed_args = args.into_iter()
-                .map(|arg| transform_expression_for_null_safety_internal(arg, is_has_function || inside_has))
-                .collect();
-            Expression::FunctionCall(transformed_func, transformed_this, transformed_args)
-        }
-        Expression::Ternary(condition, if_true, if_false) => {
-            // Recursively transform ternary expressions
-            Expression::Ternary(
-                Box::new(transform_expression_for_null_safety_internal(*condition, inside_has)),
-                Box::new(transform_expression_for_null_safety_internal(*if_true, inside_has)),
-                Box::new(transform_expression_for_null_safety_internal(*if_false, inside_has)),
-            )
-        }
-        Expression::Relation(lhs, op, rhs) => {
-            // Recursively transform relation operands
-            Expression::Relation(
-                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
-                op,
-                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
-            )
-        }
-        Expression::Arithmetic(lhs, op, rhs) => {
-            // Recursively transform arithmetic operands
-            Expression::Arithmetic(
-                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
-                op,
-                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
-            )
-        }
-        Expression::Unary(op, operand) => {
-            // Recursively transform unary operand
-            Expression::Unary(op, Box::new(transform_expression_for_null_safety_internal(*operand, inside_has)))
-        }
-        Expression::List(elements) => {
-            // Recursively transform list elements
-            let transformed_elements = elements.into_iter()
-                .map(|e| transform_expression_for_null_safety_internal(e, inside_has))
-                .collect();
-            Expression::List(transformed_elements)
-        }
-        Expression::And(lhs, rhs) => {
-            Expression::And(
-                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
-                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
-            )
-        }
-        Expression::Or(lhs, rhs) => {
-            Expression::Or(
-                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
-                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
-            )
-        }
-        Expression::Map(entries) => {
-            let transformed_entries = entries.into_iter()
-                .map(|(k, v)| (transform_expression_for_null_safety_internal(k, inside_has), transform_expression_for_null_safety_internal(v, inside_has)))
-                .collect();
-            Expression::Map(transformed_entries)
-        }
-        // For other expression types (Atom, Ident), return as-is
-        _ => expr,
-    }
 }
 
 /**
@@ -295,12 +186,23 @@ fn execute_with(
     let device_map = device_map.map.get("device").clone().unwrap_or(&PMap(HashMap::new())).clone();
 
     // Add predefined variables locally to the context
+    let standardized_variables = variables
+        .map
+        .iter()
+        .map(|it| {
+            let next = normalize_variables(it.1.clone());
+            (it.0.clone(), next)
+        }).collect();
+
+    let variables = PassableMap::new(standardized_variables);
+
     variables
         .map
         .iter()
         .for_each(|it| {
             let _ = ctx.add_variable(it.0.as_str(), it.1.to_cel());
         });
+
     // Add maybe function
     ctx.add_function("maybe", maybe);
     
@@ -321,6 +223,8 @@ fn execute_with(
         Computed,
         Device,
     }
+    
+    // Calls functions from the host's computed or device properties
     #[cfg(not(target_arch = "wasm32"))]
     fn prop_for(
         prop_type: PropType,
@@ -378,11 +282,15 @@ fn execute_with(
         // Deserialize the value
         let passable: Result<PassableValue, String> =
             val.map(|val| serde_json::from_str(val.as_str()).unwrap_or(PassableValue::Null))
+                .map(|val| {
+                    // Standardize the value ("true" to true, "1" to 1 etc...)
+                    normalize_variables(val)
+                })
                 .map_err(|err| err.to_string());
 
         passable
     }
-
+    
     #[cfg(target_arch = "wasm32")]
     fn prop_for(
         prop_type: PropType,
@@ -403,7 +311,11 @@ fn execute_with(
             ),
         };
         // Deserialize the value
-        let passable: Option<PassableValue> = serde_json::from_str(val.as_str()).unwrap_or(Some(PassableValue::Null));
+        let passable: Option<PassableValue> = serde_json::from_str(val.as_str()).unwrap_or(Some(PassableValue::Null))
+            .map(|val| {
+                normalize_variables(val)
+            })
+            .map_err(|err| err.to_string());
 
         passable
     }
@@ -453,8 +365,12 @@ fn execute_with(
                 Key::String(Arc::new(name.clone())),
                 Function(name, args).to_cel(),
             )
+
         })
-        .chain(total_device_properties.iter().map(|(k, v)| (Key::String(Arc::new(k.clone())), v.to_cel().clone())))
+        .chain(total_device_properties.iter().map(|(k, v)| {
+                let mapped_val = normalize_variables(v.clone());
+                (Key::String(Arc::new(k.clone())), mapped_val.to_cel().clone())
+        }))
         .collect();
 
     // Add the map to the `computed` object
@@ -573,6 +489,191 @@ fn execute_with(
 
     val.map(|val| DisplayableValue(val.clone()))
         .map_err(|err| DisplayableError(err))
+}
+
+/**
+ * Recursively standardizes `PassableValue` structures by normalizing
+ * string representations of booleans and numbers into their appropriate types.
+ *
+ * If the string is a:
+ *     - "true"/"false" => `PassableValue::Bool(true/false)`
+ *     - `i64` => `PassableValue::Int`
+ *     - `u64` => `PassableValue::UInt`
+ *     - `f64` => `PassableValue::Float`
+ * - All other variants are returned unchanged
+ */
+pub fn normalize_variables(passable_value: PassableValue) -> PassableValue {
+    match passable_value.clone() {
+        PassableValue::String(data) => {
+            let res = match data.as_str() {
+                "true" => PassableValue::Bool(true),
+                "false" => PassableValue::Bool(false),
+                _ => is_number(passable_value),
+            };
+            res
+        }
+        PassableValue::PMap(map) => {
+            let mut new_map = HashMap::new();
+            for (key, value) in map {
+                new_map.insert(key, normalize_variables(value));
+            }
+            PassableValue::PMap(new_map)
+        }
+        PassableValue::List(list) => {
+            let new_list = list.into_iter().map(normalize_variables).collect();
+            PassableValue::List(new_list)
+        }
+        _ => passable_value
+    }
+}
+
+fn is_number(passable: PassableValue) -> PassableValue {
+    match passable.clone() {
+        PassableValue::String(data) => {
+            match data.parse::<i64>() {
+                Ok(i) => return PassableValue::Int(i),
+                _ => {}
+            }
+            match data.parse::<u64>(){
+                Ok(i) => return PassableValue::UInt(i),
+                _ => {}
+            }
+            match data.parse::<f64>(){
+                Ok(i) => return PassableValue::Float(i),
+                _ => {}
+            }
+            passable
+        },
+        _ => passable
+    }
+}
+
+/**
+ * Transform an expression to replace property access with null-safe versions by checking with `has()` function.
+ * This ensures our expressions will never throw a unreferenced variable error but equate to null.
+ */
+fn transform_expression_for_null_safety(expr: Expression) -> Expression {
+    transform_expression_for_null_safety_internal(expr, false)
+}
+
+/**
+ * Iterates over the AST, by iterating over the children in the tree and transforming all the accessors with
+ * a has tertiary expression that returns null.
+ */
+
+fn transform_expression_for_null_safety_internal(expr: Expression, inside_has: bool) -> Expression {
+    use cel_parser::Atom;
+
+    match expr {
+        Expression::Member(operand, member) => {
+            // If we're inside a has() function, don't transform - let has() work normally
+            if inside_has {
+                Expression::Member(
+                    Box::new(transform_expression_for_null_safety_internal(*operand, inside_has)),
+                    member
+                )
+            } else {
+                // Transform obj.property to: has(obj.property) ? obj.property : null
+                let transformed_operand = Box::new(transform_expression_for_null_safety_internal(*operand, inside_has));
+
+                // Create has(obj.property) condition
+                let has_call = Expression::FunctionCall(
+                    Box::new(Expression::Ident(Arc::new("has".to_string()))),
+                    None,
+                    vec![Expression::Member(transformed_operand.clone(), member.clone())],
+                );
+
+                // Create the conditional: has(obj.property) ? obj.property : null
+                Expression::Ternary(
+                    Box::new(has_call),
+                    Box::new(Expression::Member(transformed_operand, member)),
+                    Box::new(Expression::Atom(Atom::Null)),
+                )
+            }
+        }
+        Expression::FunctionCall(func, this_expr, args) => {
+            // Check if this is a has() function call
+            let is_has_function = match func.as_ref() {
+                Expression::Ident(ident) => ident.as_str() == "has",
+                _ => false,
+            };
+
+            // Recursively transform function arguments
+            let transformed_func = Box::new(transform_expression_for_null_safety_internal(*func, inside_has));
+            let transformed_this = this_expr.map(|e| Box::new(transform_expression_for_null_safety_internal(*e, inside_has)));
+            let transformed_args = args.into_iter()
+                .map(|arg| transform_expression_for_null_safety_internal(arg, is_has_function || inside_has))
+                .collect();
+            Expression::FunctionCall(transformed_func, transformed_this, transformed_args)
+        }
+        Expression::Ternary(condition, if_true, if_false) => {
+            // Recursively transform ternary expressions
+            Expression::Ternary(
+                Box::new(transform_expression_for_null_safety_internal(*condition, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(*if_true, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(*if_false, inside_has)),
+            )
+        }
+        Expression::Relation(lhs, op, rhs) => {
+            // Recursively transform relation operands
+            Expression::Relation(
+                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
+                op,
+                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
+            )
+        }
+        Expression::Arithmetic(lhs, op, rhs) => {
+            // Recursively transform arithmetic operands
+            Expression::Arithmetic(
+                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
+                op,
+                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
+            )
+        }
+        Expression::Unary(op, operand) => {
+            // Recursively transform unary operand
+            Expression::Unary(op, Box::new(transform_expression_for_null_safety_internal(*operand, inside_has)))
+        }
+        Expression::List(elements) => {
+            // Recursively transform list elements
+            let transformed_elements = elements.into_iter()
+                .map(|e| transform_expression_for_null_safety_internal(e, inside_has))
+                .collect();
+            Expression::List(transformed_elements)
+        }
+        Expression::And(lhs, rhs) => {
+            Expression::And(
+                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
+            )
+        }
+        Expression::Or(lhs, rhs) => {
+            Expression::Or(
+                Box::new(transform_expression_for_null_safety_internal(*lhs, inside_has)),
+                Box::new(transform_expression_for_null_safety_internal(*rhs, inside_has)),
+            )
+        }
+        Expression::Map(entries) => {
+            let transformed_entries = entries.into_iter()
+                .map(|(k, v)| (transform_expression_for_null_safety_internal(k, inside_has), transform_expression_for_null_safety_internal(v, inside_has)))
+                .collect();
+            Expression::Map(transformed_entries)
+        }
+        Expression::Atom(ref atom) => {
+            // Transform string literals "true" and "false" to boolean values
+            match atom {
+                cel_parser::Atom::String(s) => {
+                    match s.as_str() {
+                        "true" => Expression::Atom(cel_parser::Atom::Bool(true)),
+                        "false" => Expression::Atom(cel_parser::Atom::Bool(false)),
+                        _ => expr,
+                    }
+                }
+                _ => expr,
+            }
+        }
+        _ => expr,
+    }
 }
 
 pub fn maybe(
@@ -1251,5 +1352,157 @@ mod tests {
         let parsed_expression = parse(expression).unwrap();
         assert_eq!(parsed_expression, deserialized_expr);
         println!("\nOriginal and deserialized expressions are equal!");
+    }
+
+    #[test]
+    fn test_string_truthiness_transformation() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        
+        // Test simple boolean variable
+        let simple_test = r#"
+        {
+            "variables": {
+                "map": {
+                    "flag": {
+                        "type": "string",
+                        "value": "true"
+                    }
+                }
+            },
+            "expression": "flag"
+        }
+        "#.to_string();
+
+        let res_simple = evaluate_with_context(
+            simple_test,
+            ctx.clone(),
+        );
+        println!("Simple boolean test: {}", res_simple);
+        assert_eq!(res_simple, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+        
+        let data = r#"
+        {
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "existing_key": {
+                                "type": "string",
+                                "value": "true"
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.existing_key == true"
+        }
+        "#.to_string();
+
+        // Test string "true" becomes boolean true
+        let res1 = evaluate_with_context(
+            data,
+            ctx.clone(),
+        );
+        assert_eq!(res1, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+        
+        // Test string "false" becomes boolean false
+        let res2 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "existing_key": {
+                                "type": "string",
+                                "value": "false"
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.existing_key == false"
+        }"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+    }
+    #[test]
+    fn test_string_numerical_transformation() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+
+        // Test simple boolean variable
+        let simple_test = r#"
+        {
+            "variables": {
+                "map": {
+                    "flag": {
+                        "type": "string",
+                        "value": "1"
+                    }
+                }
+            },
+            "expression": "flag"
+        }
+        "#.to_string();
+
+        let res_simple = evaluate_with_context(
+            simple_test,
+            ctx.clone(),
+        );
+        assert_eq!(res_simple, "{\"Ok\":{\"type\":\"int\",\"value\":1}}");
+
+        let data = r#"
+        {
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "existing_key": {
+                                "type": "uint",
+                                "value": 9223372036854775808
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.existing_key"
+        }
+        "#.to_string();
+
+        // Test string "true" becomes boolean true
+        let res1 = evaluate_with_context(
+            data,
+            ctx.clone(),
+        );
+        assert_eq!(res1, "{\"Ok\":{\"type\":\"uint\",\"value\":9223372036854775808}}");
+
+        // Test string "false" becomes boolean false
+        let res2 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "existing_key": {
+                                "type": "float",
+                                "value": 1.99999999
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.existing_key"
+        }"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"float\",\"value\":1.99999999}}");
     }
 }
