@@ -2,6 +2,7 @@
 uniffi::include_scaffolding!("cel");
 mod ast;
 mod models;
+mod utility_functions;
 
 use crate::ast::{ASTExecutionContext, JSONExpression};
 use crate::models::PassableValue::Function;
@@ -24,6 +25,7 @@ use std::task::{Poll, Waker};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::spawn_local;
+use crate::utility_functions::{maybe, to_string_i, to_string_u, to_string_f, to_string_b, to_bool, to_int, to_float};
 
 /**
  * Host context trait that defines the methods that the host context should implement,
@@ -208,8 +210,18 @@ fn execute_with(
         let _ = ctx.add_variable(it.0.as_str(), it.1.to_cel());
     });
 
-    // Add maybe function
+    // Add utility functions
     ctx.add_function("maybe", maybe);
+
+    // These will be added as extension functions
+    ctx.add_function("toString", to_string_i);
+    ctx.add_function("toString", to_string_u);
+    ctx.add_function("toString", to_string_f);
+    ctx.add_function("toString", to_string_b);
+    // Extensions on string
+    ctx.add_function("toBool", to_bool);
+    ctx.add_function("toInt", to_int);
+    ctx.add_function("toFloat", to_float);
 
     // Add fallbacks for unknown functions that return null
     // This is a workaround for unknown function calls
@@ -729,14 +741,6 @@ fn transform_expression_for_null_safety_internal(expr: Expression, inside_has: b
     }
 }
 
-pub fn maybe(
-    ftx: &FunctionContext,
-    This(_this): This<Value>,
-    left: Expression,
-    right: Expression,
-) -> Result<Value, ExecutionError> {
-    return ftx.ptx.resolve(&left).or_else(|_| ftx.ptx.resolve(&right));
-}
 
 // Wrappers around CEL values used so that we can create extensions on them
 pub struct DisplayableValue(Value);
