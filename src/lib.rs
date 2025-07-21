@@ -2,6 +2,7 @@
 uniffi::include_scaffolding!("cel");
 mod ast;
 mod models;
+mod utility_functions;
 
 use crate::ast::{ASTExecutionContext, JSONExpression};
 use crate::models::PassableValue::Function;
@@ -11,7 +12,7 @@ use crate::ExecutableType::{CompiledProgram, AST};
 use cel_interpreter::extractors::This;
 use cel_interpreter::objects::{Key, Map, TryIntoValue};
 use cel_interpreter::{Context, ExecutionError, Expression, FunctionContext, Program, Value};
-use cel_parser::parse;
+use cel_parser::{parse};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -24,6 +25,8 @@ use std::task::{Poll, Waker};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::spawn_local;
+use crate::ast::JSONExpression::Atom;
+use crate::utility_functions::{maybe, to_string_i, to_string_u, to_string_f, to_string_b, to_bool, to_int, to_float};
 
 /**
  * Host context trait that defines the methods that the host context should implement,
@@ -208,8 +211,18 @@ fn execute_with(
         let _ = ctx.add_variable(it.0.as_str(), it.1.to_cel());
     });
 
-    // Add maybe function
+    // Add utility functions
     ctx.add_function("maybe", maybe);
+
+    // These will be added as extension functions
+    ctx.add_function("toString", to_string_i);
+    ctx.add_function("toString", to_string_u);
+    ctx.add_function("toString", to_string_f);
+    ctx.add_function("toString", to_string_b);
+    // Extensions on string
+    ctx.add_function("toBool", to_bool);
+    ctx.add_function("toInt", to_int);
+    ctx.add_function("toFloat", to_float);
 
     // Add fallbacks for unknown functions that return null
     // This is a workaround for unknown function calls
@@ -533,6 +546,57 @@ pub fn normalize_variables(passable_value: PassableValue) -> PassableValue {
     }
 }
 
+/**
+ * Recursively standardizes `cel_parser::Atom::String` structures by normalizing
+ * string representations of booleans and numbers into their appropriate types.
+ *
+ * If the string is a:
+ *     - "true"/"false" => `cel_parser::Atom::Bool(true/false)`
+ *     - `i64` => `cel_parser::Atom::Int`
+ *     - `u64` => `cel_parser::Atom::UInt`
+ *     - `f64` => `cel_parser::Atom::Float`
+ * - All other variants are returned unchanged
+ */
+pub fn normalize_ast_variables(atom: cel_parser::Atom) -> cel_parser::Atom {
+    match atom.clone() {
+        cel_parser::Atom::String(data) => {
+             match data.as_str() {
+                "true" => cel_parser::Atom::Bool(true),
+                "false" => cel_parser::Atom::Bool(false),
+                _ => is_atom_number(atom),
+            }
+        }
+        _ => atom,
+    }
+}
+
+/**
+* Tries parsing a string atom using numbers, and if it is a number, treats it as such.
+*/
+fn is_atom_number(atom: cel_parser::Atom) -> cel_parser::Atom {
+    match atom.clone() {
+        cel_parser::Atom::String(data) => {
+            match data.parse::<i64>() {
+                Ok(i) => return cel_parser::Atom::Int(i),
+                Err(_) => {}
+            }
+            match data.parse::<u64>() {
+                Ok(i) => return cel_parser::Atom::UInt(i),
+                _ => {}
+            }
+            match data.parse::<f64>() {
+                Ok(i) => return cel_parser::Atom::Float(i),
+                _ => {}
+            }
+            atom
+        }
+        _ => atom,
+    }
+}
+
+/**
+* Tries parsing a string value using numbers, and if it is a number, treats it as such.
+*/
 fn is_number(passable: PassableValue) -> PassableValue {
     match passable.clone() {
         PassableValue::String(data) => {
@@ -716,27 +780,12 @@ fn transform_expression_for_null_safety_internal(expr: Expression, inside_has: b
         }
         Expression::Atom(ref atom) => {
             // Transform string literals "true" and "false" to boolean values
-            match atom {
-                cel_parser::Atom::String(s) => match s.as_str() {
-                    "true" => Expression::Atom(cel_parser::Atom::Bool(true)),
-                    "false" => Expression::Atom(cel_parser::Atom::Bool(false)),
-                    _ => expr,
-                },
-                _ => expr,
-            }
+            Expression::Atom(normalize_ast_variables(atom.clone()).clone())
         }
         _ => expr,
     }
 }
 
-pub fn maybe(
-    ftx: &FunctionContext,
-    This(_this): This<Value>,
-    left: Expression,
-    right: Expression,
-) -> Result<Value, ExecutionError> {
-    return ftx.ptx.resolve(&left).or_else(|_| ftx.ptx.resolve(&right));
-}
 
 // Wrappers around CEL values used so that we can create extensions on them
 pub struct DisplayableValue(Value);
@@ -1472,8 +1521,8 @@ mod tests {
                         "type": "map",
                         "value": {
                             "existing_key": {
-                                "type": "string",
-                                "value": "false"
+                                "type": "bool",
+                                "value": false
                             }
                         }
                     }
@@ -1485,6 +1534,98 @@ mod tests {
             ctx.clone(),
         );
         assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test device.some_key == "true" - left side is device property, right side is string "true"
+        let res3 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "some_key": {
+                                "type": "bool",
+                                "value": true
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.some_key == \"true\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res3, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test device.some_key == "false" - left side is device property, right side is string "false"
+        let res4 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "some_key": {
+                                "type": "string",
+                                "value": "false"
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.some_key == \"false\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res4, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test device.some_key == 1 - left side is device property, right side is integer 1
+        let res5 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "some_key": {
+                                "type": "int",
+                                "value": 1
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.some_key == \"1\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res5, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test device.some_key == 1.23 - left side is device property, right side is float 1.23
+        let res6 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "some_key": {
+                                "type": "float",
+                                "value": 1.23
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.some_key == \"1.23\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res6, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
     }
     #[test]
     fn test_string_numerical_transformation() {
