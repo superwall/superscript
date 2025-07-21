@@ -1,5 +1,15 @@
 # CHANGELOG
 
+
+## 1.0.0
+
+## Enhancements
+- Adds truthiness and string normalization so value such as "true", "false", "1.1" etc are treated as true, false, 1.1. This occurs on both left and right side of an expression.
+- Adds conversion methods `bool.toString()`, `float.toString()`, `int.toString()`, `bool.toString()` and `string.toBool()`,`string.toInt()`, `string.toFloat()` to enable typecasting in CEL
+
+## Truthiness
+- Fixes issues with undeclared references for properties and functions by wrapping them in a has(x)? x : Null tertiary expression
+
 ## 0.2.8
 
 ### Enhancements

@@ -1,0 +1,16 @@
+{
+  "files": {
+    "main.css": "/superscript/static/css/main.e6c13ad2.css",
+    "main.js": "/superscript/static/js/main.8f97658f.js",
+    "static/js/606.1013e45f.chunk.js": "/superscript/static/js/606.1013e45f.chunk.js",
+    "module.wasm": "/superscript/02cd96303e027c55cacb.module.wasm",
+    "index.html": "/superscript/index.html",
+    "main.e6c13ad2.css.map": "/superscript/static/css/main.e6c13ad2.css.map",
+    "main.8f97658f.js.map": "/superscript/static/js/main.8f97658f.js.map",
+    "606.1013e45f.chunk.js.map": "/superscript/static/js/606.1013e45f.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e6c13ad2.css",
+    "static/js/main.8f97658f.js"
+  ]
+}
