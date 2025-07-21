@@ -54,6 +54,7 @@ pub trait ResultCallback: Send + Sync {
     fn on_result(&self, result: String);
 }
 
+
 /**
  * Evaluate a CEL expression with the given AST
  * @param ast The AST Execution Context, serialized as JSON. This defines the AST, the variables, and the platform properties.
@@ -183,6 +184,7 @@ fn execute_with(
     device: Option<HashMap<String, Vec<PassableValue>>>,
     host: Arc<dyn HostContext + 'static>,
 ) -> Result<DisplayableValue, DisplayableError> {
+    let SUPPORTED_FN: Vec<&str> = vec!["maybe","toString","toBool","toFloat","toInt", "hasFn", "has"];
     let host = host.clone();
     let host = Arc::new(Mutex::new(host));
     let mut ctx = Context::default();
@@ -223,6 +225,37 @@ fn execute_with(
     ctx.add_function("toBool", to_bool);
     ctx.add_function("toInt", to_int);
     ctx.add_function("toFloat", to_float);
+
+    // Clone the data to move into the closure
+    let device_temp_clone = device.clone().unwrap_or(HashMap::new());
+    let comp_temp_clone = computed.clone().unwrap_or(HashMap::new());
+    let supported_fn_clone = SUPPORTED_FN.to_vec();
+    
+    ctx.add_function("hasFn", move |_ftx: &FunctionContext| -> Result<Value, ExecutionError> {
+        // hasFn should take a string argument representing the function name to check
+        let name_value = _ftx.ptx.resolve(&_ftx.args[0])?;
+        let name = match &name_value {
+            Value::String(s) => s.as_str(),
+            _ => return Err(ExecutionError::FunctionError {
+                function: "hasFn".to_string(),
+                message: "hasFn requires a string argument".to_string(),
+            }),
+        };
+        
+        let result = if supported_fn_clone.contains(&name) {
+            true
+        } else if name.starts_with("device.") {
+            let without_start = name.replace("device.", "");
+            device_temp_clone.get(&without_start).is_some()
+        } else if name.starts_with("computed.") {
+            let without_start = name.replace("computed.", "");
+            comp_temp_clone.get(&without_start).is_some()
+        } else {
+            device_temp_clone.get(name).or(comp_temp_clone.get(name)).is_some()
+        };
+        
+        Ok(Value::Bool(result))
+    });
 
     // Add fallbacks for unknown functions that return null
     // This is a workaround for unknown function calls
@@ -585,7 +618,19 @@ fn is_atom_number(atom: cel_parser::Atom) -> cel_parser::Atom {
                 _ => {}
             }
             match data.parse::<f64>() {
-                Ok(i) => return cel_parser::Atom::Float(i),
+                Ok(i) => {
+                    if i.fract() == 0.0 {
+                        let as_i64 = i as i64;
+                        if as_i64 as f64 == i {
+                            return cel_parser::Atom::Int(as_i64);
+                        }
+                        let as_u64 = i as u64;
+                        if as_u64 as f64 == i {
+                            return cel_parser::Atom::UInt(as_u64);
+                        }
+                    }
+                    return cel_parser::Atom::Float(i)
+                },
                 _ => {}
             }
             atom
@@ -609,7 +654,20 @@ fn is_number(passable: PassableValue) -> PassableValue {
                 _ => {}
             }
             match data.parse::<f64>() {
-                Ok(i) => return PassableValue::Float(i),
+                Ok(i) => {
+                    if i.fract() == 0.0 {
+                        let as_i64 = i as i64;
+                        if as_i64 as f64 == i {
+                            return PassableValue::Int(as_i64);
+                        }
+                        let as_u64 = i as u64;
+                        if as_u64 as f64 == i {
+                            return PassableValue::UInt(as_u64);
+                        }
+                    }
+                    return PassableValue::Float(i)
+
+                }
                 _ => {}
             }
             passable
@@ -1672,14 +1730,14 @@ mod tests {
         "#
         .to_string();
 
-        // Test string "true" becomes boolean true
+        // Test uint keeps value
         let res1 = evaluate_with_context(data, ctx.clone());
         assert_eq!(
             res1,
             "{\"Ok\":{\"type\":\"uint\",\"value\":9223372036854775808}}"
         );
 
-        // Test string "false" becomes boolean false
+        // Test float keeps value
         let res2 = evaluate_with_context(
             r#"{
             "variables": {
@@ -1701,5 +1759,29 @@ mod tests {
             ctx.clone(),
         );
         assert_eq!(res2, "{\"Ok\":{\"type\":\"float\",\"value\":1.99999999}}");
+
+        // Test string "false" becomes boolean false
+        let res2 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "existing_key": {
+                                "type": "string",
+                                "value": "8.00000"
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.existing_key"
+        }"#
+                .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"int\",\"value\":8}}");
+
     }
 }
