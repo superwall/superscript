@@ -691,6 +691,102 @@ fn is_number(passable: PassableValue) -> PassableValue {
 }
 
 /**
+ * Check if an expression is an atomic value (string, int, float, bool, etc.)
+ */
+fn is_expression_atom(expr: &Expression) -> bool {
+    matches!(expr, Expression::Atom(_))
+}
+
+/**
+ * Check if an expression contains Member access that needs null safety transformation
+ */
+fn expression_has_member_access(expr: &Expression) -> bool {
+    match expr {
+        Expression::Member(_, _) => true,
+        Expression::FunctionCall(func, _, _) => expression_has_member_access(func),
+        Expression::Ternary(cond, if_true, if_false) => {
+            expression_has_member_access(cond) || 
+            expression_has_member_access(if_true) || 
+            expression_has_member_access(if_false)
+        },
+        Expression::Relation(lhs, _, rhs) => {
+            expression_has_member_access(lhs) || expression_has_member_access(rhs)
+        },
+        Expression::Arithmetic(lhs, _, rhs) => {
+            expression_has_member_access(lhs) || expression_has_member_access(rhs)
+        },
+        Expression::Unary(_, operand) => expression_has_member_access(operand),
+        Expression::And(lhs, rhs) => {
+            expression_has_member_access(lhs) || expression_has_member_access(rhs)
+        },
+        Expression::Or(lhs, rhs) => {
+            expression_has_member_access(lhs) || expression_has_member_access(rhs)
+        },
+        Expression::List(elements) => {
+            elements.iter().any(|e| expression_has_member_access(e))
+        },
+        Expression::Map(entries) => {
+            entries.iter().any(|(k, v)| expression_has_member_access(k) || expression_has_member_access(v))
+        },
+        _ => false,
+    }
+}
+
+/**
+ * Get the default null value for an atomic expression based on its type
+ */
+fn get_default_value_for_atom(expr: &Expression) -> Expression {
+    match expr {
+        Expression::Atom(atom) => {
+            match atom {
+                cel_parser::Atom::String(_) => Expression::Atom(cel_parser::Atom::String(Arc::new("".to_string()))),
+                cel_parser::Atom::Int(_) => Expression::Atom(cel_parser::Atom::Int(0)),
+                cel_parser::Atom::UInt(_) => Expression::Atom(cel_parser::Atom::UInt(0)),
+                cel_parser::Atom::Float(_) => Expression::Atom(cel_parser::Atom::Float(0.0)),
+                cel_parser::Atom::Bool(_) => Expression::Atom(cel_parser::Atom::Bool(false)),
+                _ => Expression::Atom(cel_parser::Atom::Null),
+            }
+        },
+        _ => Expression::Atom(cel_parser::Atom::Null),
+    }
+}
+
+/**
+ * Get the default null value for an expression that may have been transformed
+ * This handles cases where the original atom may have been normalized
+ */
+fn get_default_value_for_atom_expression(expr: &Expression) -> Expression {
+    match expr {
+        Expression::Atom(atom) => get_default_value_for_atom(expr),
+        // If it's not an atom directly, try to extract the atom type if possible
+        _ => {
+            // For complex expressions, return a safe default
+            Expression::Atom(cel_parser::Atom::Null)
+        }
+    }
+}
+
+// Helper function to check if an expression is a hasFn wrapped function call
+fn is_hasfn_wrapped_expression(expr: &Expression) -> bool {
+    match expr {
+        Expression::Ternary(condition, _, _) => {
+            // Check if the condition is a hasFn function call
+            match condition.as_ref() {
+                Expression::FunctionCall(func, _, args) => {
+                    if let Expression::Ident(ident) = func.as_ref() {
+                        ident.as_str() == "hasFn" && args.len() == 1
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+/**
  * Transform an expression to replace property access with null-safe versions by checking with `has()` function.
  * This ensures our expressions will never throw a unreferenced variable error but equate to null.
  */
@@ -756,7 +852,7 @@ fn transform_expression_for_null_safety_internal(
                         member.clone(),
                     )],
                 );
-
+                println!("Transforming to or null");
                 // Create the conditional: has(obj.property) ? obj.property : null
                 Expression::Ternary(
                     Box::new(has_call),
@@ -897,24 +993,212 @@ fn transform_expression_for_null_safety_internal(
             )
         }
         Expression::Relation(lhs, op, rhs) => {
-            // Recursively transform relation operands
-            Expression::Relation(
-                Box::new(transform_expression_for_null_safety_internal(
-                    *lhs,
+            // Check if the left side is a simple member access (like user.credits)
+            let lhs_is_simple_member = matches!(lhs.as_ref(), Expression::Member(_, _));
+            
+            // Check if the left side is a device/computed function call that needs hasFn wrapping
+            let lhs_needs_hasfn_wrapping = match lhs.as_ref() {
+                Expression::FunctionCall(func, this_expr, _args) => {
+                    match (func.as_ref(), this_expr.as_ref()) {
+                        (Expression::Ident(func_name), Some(this_box)) => {
+                            if let Expression::Ident(obj_name) = this_box.as_ref() {
+                                let obj_str = obj_name.as_str();
+                                let func_str = func_name.as_str();
+                                
+                                if obj_str == "device" && device_functions.contains_key(func_str) {
+                                    false // Function exists, won't need wrapping
+                                } else if obj_str == "computed" && computed_functions.contains_key(func_str) {
+                                    false // Function exists, won't need wrapping  
+                                } else if obj_str == "device" || obj_str == "computed" {
+                                    true // Function doesn't exist, will need wrapping
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
+            
+            
+            if lhs_is_simple_member {
+                // First transform the right-hand side to handle normalization
+                let transformed_rhs = transform_expression_for_null_safety_internal(
+                    *rhs.clone(),
                     inside_has,
                     supported_functions,
                     device_functions,
                     computed_functions,
-                )),
-                op,
-                Box::new(transform_expression_for_null_safety_internal(
-                    *rhs,
+                );
+                
+                // Check if the original right side is an atom to determine transformation strategy
+                let rhs_is_atom = is_expression_atom(&rhs);
+                
+                if rhs_is_atom {
+                    // Right side is atom - use default value for atom type
+                    // Use the transformed version to get the correct normalized type
+                    let default_value = get_default_value_for_atom_expression(&transformed_rhs);
+                    
+                    let safe_lhs = Expression::Ternary(
+                        Box::new(Expression::FunctionCall(
+                            Box::new(Expression::Ident(Arc::new("has".to_string()))),
+                            None,
+                            vec![*lhs.clone()],
+                        )),
+                        lhs.clone(),
+                        Box::new(default_value),
+                    );
+                    
+                    Expression::Relation(
+                        Box::new(safe_lhs),
+                        op,
+                        Box::new(transformed_rhs),
+                    )
+                } else {
+                    // Right side is not atom - wrap whole expression
+                    let original_relation = Expression::Relation(
+                        lhs.clone(),
+                        op,
+                        Box::new(transform_expression_for_null_safety_internal(
+                            *rhs,
+                            inside_has,
+                            supported_functions,
+                            device_functions,
+                            computed_functions,
+                        )),
+                    );
+                    
+                    Expression::Ternary(
+                        Box::new(Expression::FunctionCall(
+                            Box::new(Expression::Ident(Arc::new("has".to_string()))),
+                            None,
+                            vec![*lhs],
+                        )),
+                        Box::new(original_relation),
+                        Box::new(Expression::Atom(cel_parser::Atom::Bool(false))),
+                    )
+                }
+            } else if lhs_needs_hasfn_wrapping {
+                // Handle device/computed function call in relation (like device.func() > 10)
+                // Create hasFn wrapping with type-aware defaults
+                let transformed_rhs = transform_expression_for_null_safety_internal(
+                    *rhs.clone(),
                     inside_has,
                     supported_functions,
                     device_functions,
                     computed_functions,
-                )),
-            )
+                );
+                
+                let rhs_is_atom = is_expression_atom(&rhs);
+                
+                // Extract function name for hasFn check
+                if let Expression::FunctionCall(func, this_expr, _args) = lhs.as_ref() {
+                    if let (Expression::Ident(func_name), Some(this_box)) = (func.as_ref(), this_expr.as_ref()) {
+                        if let Expression::Ident(obj_name) = this_box.as_ref() {
+                            let hasfn_arg = format!("{}.{}", obj_name.as_str(), func_name.as_str());
+                            
+                            // Create hasFn(function_name) condition
+                            let hasfn_call = Expression::FunctionCall(
+                                Box::new(Expression::Ident(Arc::new("hasFn".to_string()))),
+                                None,
+                                vec![Expression::Atom(cel_parser::Atom::String(Arc::new(hasfn_arg)))],
+                            );
+                            
+                            if rhs_is_atom {
+                                // Right side is atom - use type-aware default value
+                                let default_value = get_default_value_for_atom_expression(&transformed_rhs);
+                                
+                                let hasfn_ternary_lhs = Expression::Ternary(
+                                    Box::new(hasfn_call),
+                                    lhs.clone(),
+                                    Box::new(default_value),
+                                );
+                                
+                                Expression::Relation(
+                                    Box::new(hasfn_ternary_lhs),
+                                    op,
+                                    Box::new(transformed_rhs),
+                                )
+                            } else {
+                                // Right side is not atom - wrap whole relation with hasFn condition
+                                let original_relation = Expression::Relation(
+                                    lhs.clone(),
+                                    op,
+                                    Box::new(transformed_rhs),
+                                );
+                                
+                                Expression::Ternary(
+                                    Box::new(hasfn_call),
+                                    Box::new(original_relation),
+                                    Box::new(Expression::Atom(cel_parser::Atom::Bool(false))),
+                                )
+                            }
+                        } else {
+                            // Fallback - transform normally
+                            Expression::Relation(
+                                Box::new(transform_expression_for_null_safety_internal(
+                                    *lhs,
+                                    inside_has,
+                                    supported_functions,
+                                    device_functions,
+                                    computed_functions,
+                                )),
+                                op,
+                                Box::new(transformed_rhs),
+                            )
+                        }
+                    } else {
+                        // Fallback - transform normally
+                        Expression::Relation(
+                            Box::new(transform_expression_for_null_safety_internal(
+                                *lhs,
+                                inside_has,
+                                supported_functions,
+                                device_functions,
+                                computed_functions,
+                            )),
+                            op,
+                            Box::new(transformed_rhs),
+                        )
+                    }
+                } else {
+                    // Fallback - transform normally  
+                    Expression::Relation(
+                        Box::new(transform_expression_for_null_safety_internal(
+                            *lhs,
+                            inside_has,
+                            supported_functions,
+                            device_functions,
+                            computed_functions,
+                        )),
+                        op,
+                        Box::new(transformed_rhs),
+                    )
+                }
+            } else {
+                // Left side is not simple member access or hasFn ternary, transform normally
+                Expression::Relation(
+                    Box::new(transform_expression_for_null_safety_internal(
+                        *lhs,
+                        inside_has,
+                        supported_functions,
+                        device_functions,
+                        computed_functions,
+                    )),
+                    op,
+                    Box::new(transform_expression_for_null_safety_internal(
+                        *rhs,
+                        inside_has,
+                        supported_functions,
+                        device_functions,
+                        computed_functions,
+                    )),
+                )
+            }
         }
         Expression::Arithmetic(lhs, op, rhs) => {
             // Recursively transform arithmetic operands
@@ -1279,6 +1563,42 @@ mod tests {
         assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
     }
 
+
+    #[tokio::test]
+    async fn test_execution_with_has() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        let res = evaluate_with_context(
+            r#"
+        {
+                    "variables": {
+                        "map": {
+                            "user": {
+                                "type": "map",
+                                "value": {
+                                    "should_display": {
+                                        "type": "bool",
+                                        "value": true
+                                    },
+                                    "other_value": {
+                                        "type": "uint",
+                                        "value": 13
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "expression": "has(user.should_display.other_value) "
+       }
+
+        "#
+                .to_string(),
+            ctx,
+        );
+        println!("{}", res.clone());
+        assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+    }
     #[tokio::test]
     async fn test_execution_with_missing_key_returns_null() {
         let ctx = Arc::new(TestContext {
@@ -2894,6 +3214,216 @@ mod tests {
                 // Might see int conversion
             }
         }
+    }
+
+
+    #[test]
+    fn test_ast_transformation_relation_null_safety() {
+        // Test the new null safety transformation for relations based on right-side type
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+
+        // Test case 1: Right side is atomic (string becomes int) - should use 0 as default
+        let res1 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"user": {"type": "map", "value": {}}}},
+            "expression": "user.credits < \"10\"",
+            "device": {},
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // Should transform to: has(user.credits) ? user.credits < 10 : 0 < 10 
+        // which evaluates to 0 < 10 = true
+        assert_eq!(res1, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test case 2: Right side is atomic (int) - should use 0 as default for int
+        let res2 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"user": {"type": "map", "value": {}}}},
+            "expression": "user.credits < 10",
+            "device": {},
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // Should transform to: has(user.credits) ? user.credits < 10 : 0 < 10 
+        // which evaluates to 0 < 10 = true
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test case 3: Right side is atomic (float) - should use 0.0 as default
+        let res3 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"user": {"type": "map", "value": {}}}},
+            "expression": "user.score > 3.5",
+            "device": {},
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // Should transform to: has(user.score) ? user.score > 3.5 : 0.0 > 3.5 
+        // which evaluates to 0.0 > 3.5 = false
+        assert_eq!(res3, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test case 4: Right side is atomic (bool) - should use false as default
+        let res4 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"user": {"type": "map", "value": {}}}},
+            "expression": "user.active == true",
+            "device": {},
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // Should transform to: has(user.active) ? user.active == true : false == true 
+        // which evaluates to false == true = false
+        assert_eq!(res4, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test case 5: Right side is NOT atomic (property access) - should wrap whole expression
+        let res5 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"user": {"type": "map", "value": {}}, "device_limit": {"type": "int", "value": 100}}},
+            "expression": "user.credits < device.limit",
+            "device": {"limit": []},
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // Should transform to: has(user.credits) ? user.credits < device.limit : false
+        // which evaluates to false (since user.credits doesn't exist)
+        assert_eq!(res5, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test case 6: Test with existing value to make sure it still works
+        let res6 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"user": {"type": "map", "value": {"credits": {"type": "int", "value": 5}}}}},
+            "expression": "user.credits < 10",
+            "device": {},
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // Should work normally since user.credits exists
+        assert_eq!(res6, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+    }
+
+    #[test]
+    fn test_ast_transformation_hasfn_relation_null_safety() {
+        let mut map = HashMap::new();
+        map.insert("getDays".to_string(), "{\"type\": \"int\", \"value\": 10}".to_string());
+        
+        let ctx = Arc::new(TestContext {
+            map,
+        });
+
+        // Test case 1: hasFn wrapped function call with atomic comparison when function doesn't exist
+        let res1 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"device": {"type": "map", "value": {}}}},
+            "expression": "device.unknownFunc() > 5",
+            "device": {
+                "knownFunc": []
+            },
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // hasFn("device.unknownFunc") returns false (function doesn't exist)  
+        // Should transform to: hasFn("device.unknownFunc") ? device.unknownFunc() > 5 : 0 > 5
+        // Which evaluates to: false ? ... : 0 > 5 = false
+        assert_eq!(res1, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test case 2: hasFn wrapped function call with non-atomic comparison
+        let res2 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"device": {"type": "map", "value": {}}, "user": {"type": "map", "value": {"limit": {"type": "int", "value": 10}}}}},
+            "expression": "device.unknownFunc() > user.limit",
+            "device": {
+                "knownFunc": []
+            },
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // hasFn("device.unknownFunc") returns false
+        // Should transform to: hasFn("device.unknownFunc") ? device.unknownFunc() > user.limit : false
+        // Which evaluates to: false ? ... : false = false
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test case 3: string comparison with hasFn
+        let res3 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"device": {"type": "map", "value": {}}}},
+            "expression": "device.unknownFunc() == \"hello\"",
+            "device": {
+                "knownFunc": []
+            },
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // hasFn("device.unknownFunc") returns false
+        // Should transform to: hasFn("device.unknownFunc") ? device.unknownFunc() == "hello" : "" == "hello"
+        // Which evaluates to: false ? ... : "" == "hello" = false
+        assert_eq!(res3, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test case 4: boolean comparison with hasFn
+        let res4 = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"device": {"type": "map", "value": {}}}},
+            "expression": "device.unknownFunc() == true",
+            "device": {
+                "knownFunc": []
+            },
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        
+        // hasFn("device.unknownFunc") returns false
+        // Should transform to: hasFn("device.unknownFunc") ? device.unknownFunc() == true : false == true
+        // Which evaluates to: false ? ... : false == true = false
+        assert_eq!(res4, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
     }
 }
 

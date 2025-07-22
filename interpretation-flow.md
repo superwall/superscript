@@ -129,6 +129,82 @@ And(
 )
 ```
 
+#### 3c. Type-Aware Null Safety for Relations
+
+Enhanced transformations for relation expressions (comparisons) that involve `has()` or `hasFn()` wrapped expressions. These transformations provide type-appropriate default values instead of `null` to avoid comparison errors.
+
+##### Property Access Relations with Type-Aware Defaults
+
+When a property access appears in a relation with an atomic right-hand side, the transformation uses type-appropriate defaults:
+
+**Original:**
+```
+user.credits < 10
+```
+
+**Transformed (when user.credits doesn't exist):**
+```
+has(user.credits) ? user.credits < 10 : 0 < 10
+```
+
+**Type-specific defaults:**
+- `Int`/`UInt`/`Float` → `0`/`0.0`
+- `String` → `""`
+- `Bool` → `false`
+
+For non-atomic right-hand sides, the entire relation is wrapped:
+
+**Original:**
+```
+user.credits < device.limit
+```
+
+**Transformed:**
+```
+has(user.credits) ? user.credits < device.limit : false
+```
+
+##### Function Call Relations with Type-Aware Defaults
+
+When a device/computed function call appears in a relation, similar type-aware logic applies:
+
+**Original:**
+```
+device.getDays() > 5
+```
+
+**Transformed (when getDays function doesn't exist):**
+```
+hasFn("device.getDays") ? device.getDays() > 5 : 0 > 5
+```
+
+**Original:**
+```
+device.getString() == "hello"  
+```
+
+**Transformed (when getString function doesn't exist):**
+```
+hasFn("device.getString") ? device.getString() == "hello" : "" == "hello"
+```
+
+For non-atomic comparisons, the whole relation is wrapped:
+
+**Original:**
+```
+device.getLimit() > user.credits
+```
+
+**Transformed:**
+```
+hasFn("device.getLimit") ? device.getLimit() > user.credits : false
+```
+
+**Benefits:**
+- Eliminates `null` comparison errors
+- Provides predictable, type-safe default behavior
+- Maintains consistent evaluation semantics across different scenarios
+
 ### Step 4: Context Setup
 
 The `execute_with` function (src/lib.rs:180) sets up the Superscript evaluation context:
@@ -187,6 +263,39 @@ The `execute_with` function (src/lib.rs:180) sets up the Superscript evaluation 
 
 3. **Final result:** `Bool(true) && Bool(true)` → `Bool(true)`
 
+### Enhanced Type-Safe Evaluation Examples
+
+The type-aware transformations provide more predictable behavior for missing properties and functions:
+
+**Example 1: Missing property with atomic comparison**
+```
+Expression: user.credits < 10
+Variables: {"map": {"user": {"type": "map", "value": {}}}}  // credits missing
+Transformation: has(user.credits) ? user.credits < 10 : 0 < 10
+Result: false ? ... : 0 < 10 = true
+```
+
+**Example 2: Missing function with atomic comparison**
+```
+Expression: device.getDays() > 5  
+Device functions: {"knownFunc": []}  // getDays missing
+Transformation: hasFn("device.getDays") ? device.getDays() > 5 : 0 > 5
+Result: false ? ... : 0 > 5 = false
+```
+
+**Example 3: Missing function with string comparison**
+```
+Expression: device.getName() == "test"
+Device functions: {}  // getName missing
+Transformation: hasFn("device.getName") ? device.getName() == "test" : "" == "test"  
+Result: false ? ... : "" == "test" = false
+```
+
+**Benefits over previous behavior:**
+- No `null` comparison errors that would result in evaluation failures
+- Consistent, predictable results based on data types
+- Graceful degradation when properties/functions are unavailable
+
 ## Key Components
 
 ### Built-in Functions
@@ -207,10 +316,11 @@ The `execute_with` function (src/lib.rs:180) sets up the Superscript evaluation 
 
 ### Transformation Functions
 
-- **`transform_expression_for_null_safety`** (src/lib.rs:654): Applies two types of safety transformations:
+- **`transform_expression_for_null_safety`** (src/lib.rs:654): Applies three types of safety transformations:
   - **Property access**: Wraps with `has()` checks to prevent `UndeclaredReference` errors
   - **Function calls**: Wraps device/computed function calls with `hasFn()` checks using the host-exposed function lists
-  - Returns `null` for missing properties or `false` for unavailable functions instead of throwing errors
+  - **Type-aware relations**: Enhances relation expressions containing `has()` or `hasFn()` wrapped expressions with type-appropriate default values instead of `null` or generic `false` returns
+  - Eliminates comparison errors by providing sensible defaults based on the right-hand side type (e.g., `0` for numbers, `""` for strings, `false` for booleans)
 
 ### Property Resolution
 
