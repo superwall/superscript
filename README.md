@@ -2,9 +2,9 @@
 
 [![Coverage Status](https://img.shields.io/badge/coverage-78.64%25-orange.svg)](./cobertura.xml)
 
-This is the Superscript runtime library for mobile applications. Superscript is an expression language that builds upon Google's Common Expression Language (CEL) with enhanced null-safety, host integration, and mobile-optimized features.
+This is the Superscript runtime library. Superscript is an expression language that builds upon CEL with enhanced null-safety, host integration, and mobile-optimized features.
 
-The library can be used to evaluate Superscript expressions in iOS and Android applications, with support for:
+The library can be used to evaluate Superscript expressions, with support for:
 - Dynamic property resolution from host platform
 - Built-in null-safety transformations  
 - Type normalization and coercion

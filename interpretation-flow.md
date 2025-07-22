@@ -1,6 +1,6 @@
 # Superscript Expression Interpretation Flow
 
-This document describes the complete evaluation process for Superscript expressions in the cel-android library, including parsing, variable retrieval, normalization, and transformation steps.
+This document describes the complete evaluation process for Superscript expressions in the Superscript library, including parsing, variable retrieval, normalization, and transformation steps.
 
 ## Overview
 

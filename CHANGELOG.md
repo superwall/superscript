@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.0.1
+
+## Enhancements
+- Adds `hasFn` function that checks for the existance of a function or returns `false`
+- Removes `string.toBool()`,`string.toInt()`, `string.toFloat()` functions as every possible valid atom conversion is done in the AST
+
+## General
+- Adds more tests, improves test coverage, adds displaying coverage badge
+- Improves `README.MD` and adds an `interpretation-flow.md` to serve as a guide for how things are interpreted
 
 ## 1.0.0
 
