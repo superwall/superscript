@@ -1,6 +1,6 @@
 ## Superscript Runtime
 
-[![Coverage Status](https://img.shields.io/badge/coverage-78.64%25-orange.svg)](./cobertura.xml)
+[![Coverage Status](https://img.shields.io/badge/coverage-75.48%25-orange.svg)](./cobertura.xml)
 
 This is the Superscript runtime library. Superscript is an expression language that builds upon CEL with enhanced null-safety, host integration, and mobile-optimized features.
 

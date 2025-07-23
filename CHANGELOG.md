@@ -4,6 +4,14 @@
 
 ## Enhancements
 - Adds `hasFn` function that checks for the existance of a function or returns `false`
+- Enhance `hasFn` and `has` checks to do the following:
+  - If a `device.` or `computed.` function is used, or a variable is accessed in an expression
+  - Wrap the accessor in `has` or `hasFn`
+  - Wrap the evaluation to:
+    - Evaluate `has/hasFn` first
+    - if true, run the expression.
+    - if false and the right side is atomic, we evaluate the default fallback value (`0` for `int/float`, `""` for `String`)
+    - if false and the right side is not atomic, we wrap the whole expression to return `false` (to avoid error due to comparing different types)
 - Removes `string.toBool()`,`string.toInt()`, `string.toFloat()` functions as every possible valid atom conversion is done in the AST
 
 ## General
