@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.0.2.
+
+## Enhancements
+- Removes log print, reduces binary size
+
 ## 1.0.1
 
 ## Enhancements
