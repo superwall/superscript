@@ -1,8 +1,14 @@
-## Superscript runtime
+## Superscript Runtime
 
-This is the Superscript runtime library.
-It is a standalone library that can be used to evaluate Superscript expressions in Mobile applications by using
-`cel-rust` crate with addons for dynamic code execution and WASM.
+[![Coverage Status](https://img.shields.io/badge/coverage-75.48%25-orange.svg)](./cobertura.xml)
+
+This is the Superscript runtime library. Superscript is an expression language that builds upon CEL with enhanced null-safety, host integration, and mobile-optimized features.
+
+The library can be used to evaluate Superscript expressions, with support for:
+- Dynamic property resolution from host platform
+- Built-in null-safety transformations  
+- Type normalization and coercion
+- WebAssembly (WASM) deployment
 
 ## Installation
 
@@ -36,19 +42,25 @@ The library defines three methods exposed to the host platform, which you can us
 expression you want to evaluate:
 
 ```idl
- // Evaluates a CEL expression with provided variables and platform callbacks
+ // Evaluates a Superscript expression with provided variables and platform callbacks
  string evaluate_with_context(string definition, HostContext context);
  
- // Evaluates a CEL AST expression with provided variables, platform callbacks
+ // Evaluates a Superscript AST expression with provided variables, platform callbacks
  string evaluate_ast_with_context(string definition, HostContext context);
  
- // Evaluates a pure CEL AST expression
+ // Evaluates a pure Superscript AST expression
  string evaluate_ast(string ast);
+ 
+ // Parses a Superscript expression into an AST
+ string parse_to_ast(string expression);
 ```
 
 The `HostContext` object is a callback interface allowing us to invoke host (iOS/Android) functions from our Rust code.
-It provides a single function `computedProperty(name: String, args: String) -> String` that can be used to get the value of a property from the host.
-The function passes in the name and the args (if required, serialized as JSON) of the dynamic function/property we want to invoke
+It provides two functions:
+- `computed_property(name: String, args: String, callback: ResultCallback)` - For computed properties/functions
+- `device_property(name: String, args: String, callback: ResultCallback)` - For device properties/functions
+
+The functions pass in the name and the args (if required, serialized as JSON) of the dynamic function/property to invoke, and use a callback to return the result asynchronously.
 
 
 
@@ -72,6 +84,7 @@ The JSON is required to be in shape of `ExecutionContext`, which is defined as:
     // The key is the variable name, and the value is the variable value wrapped together with a type discriminator
     "map" : {
       "foo": {"type": "int", "value": 100},
+      "some_property": {"type": "string", "value": "true"},
       "numbers": {
         "type" : "list",
         "value" : [
@@ -79,31 +92,54 @@ The JSON is required to be in shape of `ExecutionContext`, which is defined as:
           {"type": "int", "value": 2},
           {"type": "int", "value": 3}
         ]
-      },
-      // Functions for our platform object - signature will be changed soon to allow for args
-      "computed" : {
-          "functionName": [{ // List of args
-                            "type": "string",
-                            "value": "event_name"
-                        }]
-      },
-      // Functions for our device object - signature will be changed soon to allow for args
-      "device" : {
-        "functionName": [{ // List of args
-          "type": "string",
-          "value": "event_name"
-        }]
       }
-
-    }},
-  // The expression to evaluate
-  "expression": "foo == 100"
+    }
+  },
+  // Host-exposed functions for computed properties
+  "computed": {
+    "daysSince": [{"type": "string", "value": "event_name"}],
+    "some_property": []
+  },
+  // Host-exposed functions for device properties  
+  "device": {
+    "daysSince": [{"type": "string", "value": "event_name"}],
+    "batteryLevel": []
+  },
+  // The Superscript expression to evaluate
+  "expression": "device.daysSince(\"app_launch\") > 3.0 && computed.some_property == true"
 }
 ```
 
-The `HostContext` object is a callback interface allowing us to invoke host (iOS/Android) functions from our Rust code.
-It provides a single function `computedProperty(name: String) -> String` that can be used to get the value of a property from the host.
-The function should return a JSON string containing the value of the property as `PassableValue`.
+## Key Features
+
+### Null-Safe Evaluation
+The library automatically transforms expressions to be null-safe:
+- **Property access**: `obj.property` becomes `has(obj.property) ? obj.property : null`
+- **Function calls**: `device.function()` becomes `hasFn("device.function") ? device.function() : false`
+
+### Built-in Functions
+Supported functions are defined in the `SUPPORTED_FUNCTIONS` constant:
+- `maybe` - Null coalescing operator
+- `toString`, `toBool`, `toInt`, `toFloat` - Type conversion extension functions
+- `has` - Checks if a property exists
+- `hasFn` - Checks if a function is available
+
+### Host Integration
+The `HostContext` provides async callbacks to resolve dynamic properties:
+- `computed_property(name, args, callback)` - For computed functions
+- `device_property(name, args, callback)` - For device functions
+
+Results are returned as JSON-serialized `PassableValue` objects.
+
+### Variable Normalization
+The library automatically normalizes string values to their appropriate types:
+- `"true"/"false"` → `Bool`
+- Numeric strings → `Int`/`UInt`/`Float`
+- Works recursively on nested objects and arrays
+
+## Documentation
+
+For a detailed explanation of the expression evaluation process, see [interpretation-flow.md](interpretation-flow.md).
 
 ### iOS
 
@@ -120,7 +156,8 @@ with generated swift files from `./target/ios`
 This should give you a `HostContext` protocol:
 ```swift
 public protocol HostContextProtocol : AnyObject {
-    func computedProperty(name: String)  -> String   
+    func computedProperty(name: String, args: String, callback: ResultCallback)
+    func deviceProperty(name: String, args: String, callback: ResultCallback)
 }
 ```
 

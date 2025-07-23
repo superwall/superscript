@@ -387,4 +387,164 @@ mod tests {
         assert_eq!(expr, deserialized_expr);
         println!("\nOriginal and deserialized expressions are equal!");
     }
+
+    #[test]
+    fn test_ast_edge_cases() {
+        // Test all JSONRelationOp variants
+        let ops = vec![
+            JSONRelationOp::LessThan,
+            JSONRelationOp::LessThanEq,
+            JSONRelationOp::GreaterThan,
+            JSONRelationOp::GreaterThanEq,
+            JSONRelationOp::Equals,
+            JSONRelationOp::NotEquals,
+            JSONRelationOp::In,
+        ];
+
+        for op in ops {
+            let cel_op: RelationOp = op.clone().into();
+            let back_to_json: JSONRelationOp = cel_op.into();
+            assert_eq!(op, back_to_json);
+        }
+
+        // Test all JSONArithmeticOp variants
+        let arith_ops = vec![
+            JSONArithmeticOp::Add,
+            JSONArithmeticOp::Subtract,
+            JSONArithmeticOp::Divide,
+            JSONArithmeticOp::Multiply,
+            JSONArithmeticOp::Modulus,
+        ];
+
+        for op in arith_ops {
+            let cel_op: ArithmeticOp = op.clone().into();
+            let back_to_json: JSONArithmeticOp = cel_op.into();
+            assert_eq!(op, back_to_json);
+        }
+
+        // Test all JSONUnaryOp variants
+        let unary_ops = vec![
+            JSONUnaryOp::Not,
+            JSONUnaryOp::DoubleNot,
+            JSONUnaryOp::Minus,
+            JSONUnaryOp::DoubleMinus,
+        ];
+
+        for op in unary_ops {
+            let cel_op: UnaryOp = op.clone().into();
+            let back_to_json: JSONUnaryOp = cel_op.into();
+            assert_eq!(op, back_to_json);
+        }
+
+        // Test JSONMember variants
+        let attr_member = JSONMember::Attribute("test".to_string());
+        let index_member = JSONMember::Index(Box::new(JSONExpression::Atom(JSONAtom::Int(0))));
+        let fields_member = JSONMember::Fields(vec![(
+            "field".to_string(),
+            JSONExpression::Atom(JSONAtom::String("value".to_string())),
+        )]);
+
+        // Convert to CEL and back
+        let cel_attr: Member = attr_member.clone().into();
+        let back_attr: JSONMember = cel_attr.into();
+        assert_eq!(attr_member, back_attr);
+
+        let cel_index: Member = index_member.clone().into();
+        let back_index: JSONMember = cel_index.into();
+        assert_eq!(index_member, back_index);
+
+        let cel_fields: Member = fields_member.clone().into();
+        let back_fields: JSONMember = cel_fields.into();
+        assert_eq!(fields_member, back_fields);
+
+        // Test all JSONAtom variants
+        let atoms = vec![
+            JSONAtom::Int(42),
+            JSONAtom::UInt(42),
+            JSONAtom::Float(3.14),
+            JSONAtom::String("test".to_string()),
+            JSONAtom::Bytes(vec![1, 2, 3]),
+            JSONAtom::Bool(true),
+            JSONAtom::Null,
+        ];
+
+        for atom in atoms {
+            let cel_atom: Atom = atom.clone().into();
+            let back_to_json: JSONAtom = cel_atom.into();
+            assert_eq!(atom, back_to_json);
+        }
+    }
+
+    #[test]
+    fn test_complex_ast_serialization() {
+        // Test a complex nested expression
+        let complex_expr = JSONExpression::And(
+            Box::new(JSONExpression::Relation(
+                Box::new(JSONExpression::Member(
+                    Box::new(JSONExpression::Ident("user".to_string())),
+                    Box::new(JSONMember::Attribute("age".to_string())),
+                )),
+                JSONRelationOp::GreaterThan,
+                Box::new(JSONExpression::Atom(JSONAtom::Int(18))),
+            )),
+            Box::new(JSONExpression::Or(
+                Box::new(JSONExpression::FunctionCall(
+                    Box::new(JSONExpression::Member(
+                        Box::new(JSONExpression::Ident("user".to_string())),
+                        Box::new(JSONMember::Attribute("hasPermission".to_string())),
+                    )),
+                    None,
+                    vec![JSONExpression::Atom(JSONAtom::String("admin".to_string()))],
+                )),
+                Box::new(JSONExpression::Ternary(
+                    Box::new(JSONExpression::Atom(JSONAtom::Bool(true))),
+                    Box::new(JSONExpression::Atom(JSONAtom::String("yes".to_string()))),
+                    Box::new(JSONExpression::Atom(JSONAtom::String("no".to_string()))),
+                )),
+            )),
+        );
+
+        // Serialize to JSON
+        let json_str = serde_json::to_string(&complex_expr).unwrap();
+        assert!(json_str.len() > 0);
+
+        // Deserialize back
+        let deserialized: JSONExpression = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(complex_expr, deserialized);
+
+        // Convert to CEL Expression and back
+        let cel_expr: Expression = complex_expr.clone().into();
+        let back_to_json: JSONExpression = cel_expr.into();
+        assert_eq!(complex_expr, back_to_json);
+    }
+
+    #[test]
+    fn test_ast_list_and_map_expressions() {
+        // Test List expression
+        let list_expr = JSONExpression::List(vec![
+            JSONExpression::Atom(JSONAtom::Int(1)),
+            JSONExpression::Atom(JSONAtom::String("test".to_string())),
+            JSONExpression::Atom(JSONAtom::Bool(true)),
+        ]);
+
+        let cel_list: Expression = list_expr.clone().into();
+        let back_to_json: JSONExpression = cel_list.into();
+        assert_eq!(list_expr, back_to_json);
+
+        // Test Map expression
+        let map_expr = JSONExpression::Map(vec![
+            (
+                JSONExpression::Atom(JSONAtom::String("key1".to_string())),
+                JSONExpression::Atom(JSONAtom::Int(42)),
+            ),
+            (
+                JSONExpression::Atom(JSONAtom::String("key2".to_string())),
+                JSONExpression::Atom(JSONAtom::Bool(false)),
+            ),
+        ]);
+
+        let cel_map: Expression = map_expr.clone().into();
+        let back_to_map: JSONExpression = cel_map.into();
+        assert_eq!(map_expr, back_to_map);
+    }
 }
