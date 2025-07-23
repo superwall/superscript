@@ -1854,7 +1854,7 @@ mod tests {
                 }
             }
         },
-        "expression": "device.something || 100",
+        "expression": "device.something > 5 || 100",
         "computed": {
             "daysSince": [
                 {
@@ -1907,6 +1907,35 @@ mod tests {
 
         // Should return null because unknownFunction is not defined
         assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
+    }
+
+    #[test]
+    fn test_undeclared_device_function_returns_false() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+
+        let res = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {}},
+            "expression": "computed.unknownFunction('test') == \"\"",
+            "computed": {
+                "knownFunction": [
+                    {
+                        "type": "string",
+                        "value": "test"
+                    }
+                ]
+            }
+        }
+        "#
+                .to_string(),
+            ctx,
+        );
+
+        // Should return null because unknownFunction is not defined
+        assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
     }
 
     #[test]
