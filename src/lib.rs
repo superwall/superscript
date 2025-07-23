@@ -852,7 +852,6 @@ fn transform_expression_for_null_safety_internal(
                         member.clone(),
                     )],
                 );
-                println!("Transforming to or null");
                 // Create the conditional: has(obj.property) ? obj.property : null
                 Expression::Ternary(
                     Box::new(has_call),
