@@ -3,7 +3,7 @@
 set -e
 
 echo "Building for Android x86_64, armv7, aarch64:"
-
+unset RUSTFLAGS
 export ANDROID_NDK=r28b ANDROID_SDK=26 ANDROID_VERSION=11.0.0_r48
 
 build_targets=(

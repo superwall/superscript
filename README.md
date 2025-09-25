@@ -28,6 +28,20 @@ To build the library, run:
 
 (note: for the first run you will need to `chmod +x build.sh` and wait a bit until the docker images are downloaded)
 
+### Verifying 16KB Page Alignment
+
+To verify that the built libraries are properly aligned for Android's 16KB page size requirement:
+
+```shell
+./test_16kb_build.sh
+```
+
+Or to verify alignment of existing libraries without rebuilding:
+
+```shell
+./check_elf_alignment.sh target/android/jniLibs/
+```
+
 This will:
 
 - Clear the previously built jniLibs
