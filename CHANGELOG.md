@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.0.4
+
+## Enhancements
+- Disable Android Cleaner in UniFFI builds
+
 ## 1.0.3
 
 ## Enhancements
