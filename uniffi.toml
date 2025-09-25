@@ -1,3 +1,4 @@
 [bindings.kotlin]
 package_name = 'com.superwall.supercel'
 android = true
+android_cleaner = false
