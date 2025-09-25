@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 1.0.3
+
+## Enhancements
+- Ensure that previously set compilation flags do not affect Android compilation
+- Add flags to ensure common page size is being passed to Cross
+
 ## 1.0.2.
 
 ## Enhancements
