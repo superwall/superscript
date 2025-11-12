@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.0.6
+
+## Fixes
+- Ensure new module headers point to right places
 
 ## 1.0.5
 
