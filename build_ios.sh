@@ -214,3 +214,23 @@ xcodebuild -create-xcframework \
     -output ./target/xcframeworks/libcel.xcframework
 
 echo "XCFramework built at ./target/xcframeworks/libcel.xcframework"
+
+# Restructure module maps to avoid SPM conflicts
+echo "Restructuring module maps to avoid SPM conflicts"
+XCFW_PATH="./target/xcframeworks/libcel.xcframework"
+
+# For each slice in the xcframework
+for slice_dir in "$XCFW_PATH"/*/; do
+    if [ -f "$slice_dir/Headers/module.modulemap" ]; then
+        slice_name=$(basename "$slice_dir")
+        echo "  Processing $slice_name"
+
+        # Create Modules directory
+        mkdir -p "$slice_dir/Modules"
+
+        # Move module.modulemap from Headers to Modules
+        mv "$slice_dir/Headers/module.modulemap" "$slice_dir/Modules/module.modulemap"
+    fi
+done
+
+echo "Module map restructuring complete - SPM compatible"

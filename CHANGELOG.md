@@ -1,5 +1,11 @@
 # CHANGELOG
 
+
+## 1.0.5
+
+## Fixes
+- Fixes namespaces for SPM module headers
+
 ## 1.0.4
 
 ## Enhancements
