@@ -215,11 +215,11 @@ xcodebuild -create-xcframework \
 
 echo "XCFramework built at ./target/xcframeworks/libcel.xcframework"
 
-# Restructure module maps to avoid SPM conflicts
-echo "Restructuring module maps to avoid SPM conflicts"
+# Create Modules directory for SPM compatibility
+# SPM prefers Modules/module.modulemap and won't stage it to global include path
+echo "Creating Modules directory for SPM compatibility"
 XCFW_PATH="./target/xcframeworks/libcel.xcframework"
 
-# For each slice in the xcframework
 for slice_dir in "$XCFW_PATH"/*/; do
     if [ -f "$slice_dir/Headers/module.modulemap" ]; then
         slice_name=$(basename "$slice_dir")
@@ -228,12 +228,11 @@ for slice_dir in "$XCFW_PATH"/*/; do
         # Create Modules directory
         mkdir -p "$slice_dir/Modules"
 
-        # Move module.modulemap from Headers to Modules
-        mv "$slice_dir/Headers/module.modulemap" "$slice_dir/Modules/module.modulemap"
-
-        # Update header paths in modulemap to point to ../Headers/
-        sed -i '' 's|header "\([^"]*\)"|header "../Headers/\1"|g' "$slice_dir/Modules/module.modulemap"
+        # Copy module.modulemap to Modules with adjusted header paths
+        sed 's|header "\([^"]*\)"|header "../Headers/\1"|g' "$slice_dir/Headers/module.modulemap" > "$slice_dir/Modules/module.modulemap"
     fi
 done
 
-echo "Module map restructuring complete - SPM compatible"
+echo "Dual module map structure created:"
+echo "  - Headers/module.modulemap (for CocoaPods)"
+echo "  - Modules/module.modulemap (for SPM - avoids staging conflicts)"
