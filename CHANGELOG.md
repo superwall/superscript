@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.0.7
+
+## Fixes
+- Fix iOS build script
+
 ## 1.0.6
 
 ## Fixes

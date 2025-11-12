@@ -213,12 +213,6 @@ xcodebuild -create-xcframework \
     -library ./target/xcframeworks/watchos-device/libcel.a -headers ./target/xcframeworks/headers/watchos-device \
     -output ./target/xcframeworks/libcel.xcframework
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< Updated upstream
-echo "XCFramework built at ./target/xcframeworks/libcel.xcframework"
-=======
->>>>>>> Stashed changes
 echo "XCFramework built at ./target/xcframeworks/libcel.xcframework"
 
 # Restructure module maps to avoid SPM conflicts
@@ -236,12 +230,6 @@ for slice_dir in "$XCFW_PATH"/*/; do
 
         # Move module.modulemap from Headers to Modules
         mv "$slice_dir/Headers/module.modulemap" "$slice_dir/Modules/module.modulemap"
-<<<<<<< Updated upstream
-    fi
-done
-
-echo "Module map restructuring complete - SPM compatible"
-=======
 
         # Update header paths in modulemap to point to ../Headers/
         sed -i '' 's|header "\([^"]*\)"|header "../Headers/\1"|g' "$slice_dir/Modules/module.modulemap"
@@ -249,5 +237,3 @@ echo "Module map restructuring complete - SPM compatible"
 done
 
 echo "Module map restructuring complete - SPM compatible"
->>>>>>> Stashed changes
->>>>>>> Stashed changes
