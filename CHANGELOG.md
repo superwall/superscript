@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.0.9
+
+## Fixes
+- Ensures XC projects also work with module SPM setup
 ## 1.0.8
 
 ## Fixes
