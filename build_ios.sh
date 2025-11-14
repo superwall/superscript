@@ -125,25 +125,25 @@ mkdir -p ./target/watchos/release/
 # Clean up previous build artifacts
 rm -rf ./target/xcframeworks
 
-# Create directories for headers
-mkdir -p ./target/xcframeworks/headers/ios-simulator
-mkdir -p ./target/xcframeworks/headers/ios-device
-mkdir -p ./target/xcframeworks/headers/macos
-mkdir -p ./target/xcframeworks/headers/catalyst
-mkdir -p ./target/xcframeworks/headers/visionos-simulator
-mkdir -p ./target/xcframeworks/headers/visionos-device
-mkdir -p ./target/xcframeworks/headers/watchos-simulator
-mkdir -p ./target/xcframeworks/headers/watchos-device
+# Create directories for headers with celFFI subdirectory to avoid Xcode collisions
+mkdir -p ./target/xcframeworks/headers/ios-simulator/celFFI
+mkdir -p ./target/xcframeworks/headers/ios-device/celFFI
+mkdir -p ./target/xcframeworks/headers/macos/celFFI
+mkdir -p ./target/xcframeworks/headers/catalyst/celFFI
+mkdir -p ./target/xcframeworks/headers/visionos-simulator/celFFI
+mkdir -p ./target/xcframeworks/headers/visionos-device/celFFI
+mkdir -p ./target/xcframeworks/headers/watchos-simulator/celFFI
+mkdir -p ./target/xcframeworks/headers/watchos-device/celFFI
 
-# Copy headers
-cp -R ./target/ios/* ./target/xcframeworks/headers/ios-simulator/
-cp -R ./target/ios/* ./target/xcframeworks/headers/ios-device/
-cp -R ./target/ios/* ./target/xcframeworks/headers/macos/
-cp -R ./target/ios/* ./target/xcframeworks/headers/catalyst/
-cp -R ./target/ios/* ./target/xcframeworks/headers/visionos-simulator/
-cp -R ./target/ios/* ./target/xcframeworks/headers/visionos-device/
-cp -R ./target/ios/* ./target/xcframeworks/headers/watchos-simulator/
-cp -R ./target/ios/* ./target/xcframeworks/headers/watchos-device/
+# Copy headers into celFFI subdirectory
+cp -R ./target/ios/* ./target/xcframeworks/headers/ios-simulator/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/ios-device/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/macos/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/catalyst/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/visionos-simulator/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/visionos-device/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/watchos-simulator/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/watchos-device/celFFI/
 
 # iOS Simulator (combined arm64 and x86_64)
 echo "Preparing iOS Simulator library (universal binary)"
@@ -221,18 +221,18 @@ echo "Creating Modules directory for SPM compatibility"
 XCFW_PATH="./target/xcframeworks/libcel.xcframework"
 
 for slice_dir in "$XCFW_PATH"/*/; do
-    if [ -f "$slice_dir/Headers/module.modulemap" ]; then
+    if [ -f "$slice_dir/Headers/celFFI/module.modulemap" ]; then
         slice_name=$(basename "$slice_dir")
         echo "  Processing $slice_name"
 
         # Create Modules directory
         mkdir -p "$slice_dir/Modules"
 
-        # Copy module.modulemap to Modules with adjusted header paths
-        sed 's|header "\([^"]*\)"|header "../Headers/\1"|g' "$slice_dir/Headers/module.modulemap" > "$slice_dir/Modules/module.modulemap"
+        # Copy module.modulemap to Modules with adjusted header paths to point to celFFI subdirectory
+        sed 's|header "\([^"]*\)"|header "../Headers/celFFI/\1"|g' "$slice_dir/Headers/celFFI/module.modulemap" > "$slice_dir/Modules/module.modulemap"
     fi
 done
 
-echo "Dual module map structure created:"
-echo "  - Headers/module.modulemap (for CocoaPods)"
+echo "Module map structure created:"
+echo "  - Headers/celFFI/module.modulemap (for CocoaPods, isolated path prevents Xcode collisions)"
 echo "  - Modules/module.modulemap (for SPM - avoids staging conflicts)"
