@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.0.8
+
+## Fixes
+- Fix generic module name
+
 ## 1.0.7
 
 ## Fixes
