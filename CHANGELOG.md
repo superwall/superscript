@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.0.10
+
+## Fixes
+- Removes modulemap from outputs
+
 ## 1.0.9
 
 ## Fixes

@@ -215,24 +215,5 @@ xcodebuild -create-xcframework \
 
 echo "XCFramework built at ./target/xcframeworks/libcel.xcframework"
 
-# Create Modules directory for SPM compatibility
-# SPM prefers Modules/module.modulemap and won't stage it to global include path
-echo "Creating Modules directory for SPM compatibility"
-XCFW_PATH="./target/xcframeworks/libcel.xcframework"
-
-for slice_dir in "$XCFW_PATH"/*/; do
-    if [ -f "$slice_dir/Headers/celFFI/module.modulemap" ]; then
-        slice_name=$(basename "$slice_dir")
-        echo "  Processing $slice_name"
-
-        # Create Modules directory
-        mkdir -p "$slice_dir/Modules"
-
-        # Copy module.modulemap to Modules with adjusted header paths to point to celFFI subdirectory
-        sed 's|header "\([^"]*\)"|header "../Headers/celFFI/\1"|g' "$slice_dir/Headers/celFFI/module.modulemap" > "$slice_dir/Modules/module.modulemap"
-    fi
-done
-
-echo "Module map structure created:"
-echo "  - Headers/celFFI/module.modulemap (for CocoaPods, isolated path prevents Xcode collisions)"
-echo "  - Modules/module.modulemap (for SPM - avoids staging conflicts)"
+echo "XCFramework structure with namespaced headers:"
+echo "  - Headers/celFFI/module.modulemap (subdirectory prevents staging collisions)"
