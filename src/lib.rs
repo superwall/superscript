@@ -441,7 +441,9 @@ fn execute_with(
             )
         })
         .chain(total_device_properties.iter().map(|(k, v)| {
-            let mapped_val = normalize_variables(v.clone());
+            // Use the skip set when normalizing device properties
+            let path = format!("device.{}", k);
+            let mapped_val = normalize_variables_with_skip(v.clone(), &skip_normalization, &path);
             (
                 Key::String(Arc::new(k.clone())),
                 mapped_val.to_cel().clone(),
@@ -2887,6 +2889,109 @@ mod tests {
             }),
         );
         assert!(!result2.is_empty());
+    }
+
+    #[test]
+    fn test_extract_string_compared_variables() {
+        // Test that we correctly extract variable paths from expressions
+        use cel_parser::parse;
+
+        let expr = parse(r#"device.appVersionPadded > "007.003.001""#).unwrap();
+        let skip_set = super::extract_string_compared_variables(&expr);
+
+        println!("Skip set: {:?}", skip_set);
+        assert!(skip_set.contains("device.appVersionPadded"), "Should contain device.appVersionPadded, got: {:?}", skip_set);
+    }
+
+    #[test]
+    fn test_version_string_comparison_not_normalized_to_number() {
+        // Test that version strings like "009.000" are NOT converted to numbers
+        // when compared against string literals like "007.003.001"
+        // This was a bug where "009.000" was normalized to Int(9), causing type mismatch
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+
+        // Test case: device.appVersionPadded > "007.003.001" where appVersionPadded = "009.000"
+        let res = evaluate_with_context(
+            r#"{
+                "variables": {
+                    "map": {
+                        "device": {
+                            "type": "map",
+                            "value": {
+                                "appVersionPadded": {"type": "string", "value": "009.000"}
+                            }
+                        }
+                    }
+                },
+                "expression": "device.appVersionPadded > \"007.003.001\""
+            }"#.to_string(),
+            ctx.clone(),
+        );
+        // Should return true because "009.000" > "007.003.001" lexicographically
+        assert!(res.contains("true"), "Expected true but got: {}", res);
+
+        // Test the reverse - should be false
+        let res2 = evaluate_with_context(
+            r#"{
+                "variables": {
+                    "map": {
+                        "device": {
+                            "type": "map",
+                            "value": {
+                                "appVersionPadded": {"type": "string", "value": "005.000"}
+                            }
+                        }
+                    }
+                },
+                "expression": "device.appVersionPadded > \"007.003.001\""
+            }"#.to_string(),
+            ctx.clone(),
+        );
+        // Should return false because "005.000" < "007.003.001" lexicographically
+        assert!(res2.contains("false"), "Expected false but got: {}", res2);
+
+        // Test equality
+        let res3 = evaluate_with_context(
+            r#"{
+                "variables": {
+                    "map": {
+                        "device": {
+                            "type": "map",
+                            "value": {
+                                "appVersionPadded": {"type": "string", "value": "007.003.001"}
+                            }
+                        }
+                    }
+                },
+                "expression": "device.appVersionPadded == \"007.003.001\""
+            }"#.to_string(),
+            ctx.clone(),
+        );
+        assert!(res3.contains("true"), "Expected true for equality but got: {}", res3);
+
+        // Test with 2-component version (the original bug case)
+        let res4 = evaluate_with_context(
+            r#"{
+                "variables": {
+                    "map": {
+                        "device": {
+                            "type": "map",
+                            "value": {
+                                "appVersionPadded": {"type": "string", "value": "009.000"}
+                            }
+                        }
+                    }
+                },
+                "expression": "device.appVersionPadded > \"007.003.001\""
+            }"#.to_string(),
+            ctx.clone(),
+        );
+        // This was the bug - "009.000" should NOT become Int(9)
+        // It should stay as String("009.000") and compare correctly
+        assert!(!res4.contains("Err"), "Should not error, got: {}", res4);
+        assert!(res4.contains("true"), "Expected true but got: {}", res4);
     }
 
     #[test]
