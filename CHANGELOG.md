@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.0.12
+
+- Bump version
+
 ## 1.0.11
 
 ## Fixes
