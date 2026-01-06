@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.0.11
+
+## Fixes
+- Fixes comparison issue of padded numbers by skipping expression conversion and normalization in special cases
+
 ## 1.0.10
 
 ## Fixes
