@@ -8,15 +8,13 @@
 
 ## 1.0.12
 
-### Fixes
-
-- Fix string literal normalization in expressions where quoted strings like `"5690201"` were incorrectly converted to integers
+- Bump version
 
 ## 1.0.11
 
-### Fixes
+## Fixes
 
-- Fix string-to-number normalization for variables compared against string literals (e.g., version comparisons like `"009.000" > "007.003.001"`)
+- Fixes comparison issue of padded numbers by skipping expression conversion and normalization in special cases
 
 ## 1.0.10
 

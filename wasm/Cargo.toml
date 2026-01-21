@@ -1,6 +1,6 @@
 [package]
 name = "superscript"
-version = "1.0.10"
+version = "1.0.12"
 edition = "2021"
 publish = false
 
