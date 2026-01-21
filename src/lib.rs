@@ -13,7 +13,7 @@ use cel_interpreter::extractors::This;
 use cel_interpreter::objects::{Key, Map, TryIntoValue};
 use cel_interpreter::{Context, ExecutionError, Expression, FunctionContext, Program, Value};
 use cel_parser::parse;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Debug;
@@ -75,13 +75,8 @@ pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>)
     };
     let host = host.clone();
 
-    // Convert to Expression first to extract skip set
+    // Convert to Expression and transform for null-safe property access
     let expr: Expression = data.expression.into();
-
-    // Extract variables that are compared against string literals
-    let skip_normalization = extract_string_compared_variables(&expr);
-
-    // Transform the expression for null-safe property access
     let transformed_expr = transform_expression_for_null_safety(
         expr,
         SUPPORTED_FUNCTIONS,
@@ -94,7 +89,6 @@ pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>)
         data.computed,
         data.device,
         host,
-        skip_normalization,
     )
     .map(|val| val.to_passable())
     .map_err(|err| err.to_string());
@@ -150,10 +144,6 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
     let parsed_expr = parse(data.expression.as_str());
     let result = match parsed_expr {
         Ok(expr) => {
-            // Extract variables that are compared against string literals
-            // These should not have string-to-number normalization applied
-            let skip_normalization = extract_string_compared_variables(&expr);
-
             let transformed_expr = transform_expression_for_null_safety(
                 expr,
                 SUPPORTED_FUNCTIONS,
@@ -166,7 +156,6 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
                 data.computed,
                 data.device,
                 host,
-                skip_normalization,
             )
             .map(|val| val.to_passable())
             .map_err(|err| err.to_string())
@@ -208,7 +197,6 @@ fn execute_with(
     computed: Option<HashMap<String, Vec<PassableValue>>>,
     device: Option<HashMap<String, Vec<PassableValue>>>,
     host: Arc<dyn HostContext + 'static>,
-    skip_normalization: HashSet<String>,
 ) -> Result<DisplayableValue, DisplayableError> {
     let supported_fn = SUPPORTED_FUNCTIONS;
     let host = host.clone();
@@ -224,12 +212,12 @@ fn execute_with(
         .clone();
 
     // Add predefined variables locally to the context
-    // Skip string-to-number normalization for variables compared against string literals
+    // Normalize "true"/"false" strings to booleans, but leave other strings as-is
     let standardized_variables = variables
         .map
         .iter()
         .map(|it| {
-            let next = normalize_variables_with_skip(it.1.clone(), &skip_normalization, it.0);
+            let next = normalize_variables(it.1.clone());
             (it.0.clone(), next)
         })
         .collect();
@@ -441,9 +429,7 @@ fn execute_with(
             )
         })
         .chain(total_device_properties.iter().map(|(k, v)| {
-            // Use the skip set when normalizing device properties
-            let path = format!("device.{}", k);
-            let mapped_val = normalize_variables_with_skip(v.clone(), &skip_normalization, &path);
+            let mapped_val = normalize_variables(v.clone());
             (
                 Key::String(Arc::new(k.clone())),
                 mapped_val.to_cel().clone(),
@@ -592,49 +578,28 @@ fn execute_with(
  * This is used for variables that are compared against string literals in the expression.
  */
 pub fn normalize_variables(passable_value: PassableValue) -> PassableValue {
-    normalize_variables_with_skip(passable_value, &HashSet::new(), "")
-}
-
-fn normalize_variables_with_skip(
-    passable_value: PassableValue,
-    skip_normalization: &HashSet<String>,
-    current_path: &str,
-) -> PassableValue {
     match passable_value.clone() {
         PassableValue::String(data) => {
-            let res = match data.as_str() {
+            // Only convert "true"/"false" strings to booleans
+            // Don't convert numeric strings to numbers - they should stay as strings
+            // This ensures string comparisons like device.appBuildString == "5690201" work correctly
+            match data.as_str() {
                 "true" => PassableValue::Bool(true),
                 "false" => PassableValue::Bool(false),
-                _ => {
-                    // Skip number conversion if this variable is compared against a string
-                    if skip_normalization.contains(current_path) {
-                        passable_value
-                    } else {
-                        is_number(passable_value)
-                    }
-                }
-            };
-            res
+                _ => passable_value,
+            }
         }
         PassableValue::PMap(map) => {
             let mut new_map = HashMap::new();
             for (key, value) in map {
-                let child_path = if current_path.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{}.{}", current_path, key)
-                };
-                new_map.insert(
-                    key,
-                    normalize_variables_with_skip(value, skip_normalization, &child_path),
-                );
+                new_map.insert(key, normalize_variables(value));
             }
             PassableValue::PMap(new_map)
         }
         PassableValue::List(list) => {
             let new_list = list
                 .into_iter()
-                .map(|v| normalize_variables_with_skip(v, skip_normalization, current_path))
+                .map(|v| normalize_variables(v))
                 .collect();
             PassableValue::List(new_list)
         }
@@ -643,198 +608,21 @@ fn normalize_variables_with_skip(
 }
 
 /**
- * Recursively standardizes `cel_parser::Atom::String` structures by normalizing
- * string representations of booleans and numbers into their appropriate types.
+ * Normalizes `cel_parser::Atom::String` structures by converting
+ * string representations of booleans into their appropriate types.
  *
- * If the string is a:
- *     - "true"/"false" => `cel_parser::Atom::Bool(true/false)`
- *     - `i64` => `cel_parser::Atom::Int`
- *     - `u64` => `cel_parser::Atom::UInt`
- *     - `f64` => `cel_parser::Atom::Float`
- * - All other variants are returned unchanged
+ * Only "true" and "false" strings are converted to booleans.
+ * Numeric strings are NOT converted to numbers - quoted strings stay as strings.
+ * If the user wanted a number, they would write it without quotes.
  */
 pub fn normalize_ast_variables(atom: cel_parser::Atom) -> cel_parser::Atom {
     match atom.clone() {
         cel_parser::Atom::String(data) => match data.as_str() {
             "true" => cel_parser::Atom::Bool(true),
             "false" => cel_parser::Atom::Bool(false),
-            _ => is_atom_number(atom),
+            _ => atom,
         },
         _ => atom,
-    }
-}
-
-/**
-* Tries parsing a string atom as a number, and if it is a number, converts it.
-*/
-fn is_atom_number(atom: cel_parser::Atom) -> cel_parser::Atom {
-    match atom.clone() {
-        cel_parser::Atom::String(data) => {
-            match data.parse::<i64>() {
-                Ok(i) => return cel_parser::Atom::Int(i),
-                Err(_) => {}
-            }
-            match data.parse::<u64>() {
-                Ok(i) => return cel_parser::Atom::UInt(i),
-                _ => {}
-            }
-            match data.parse::<f64>() {
-                Ok(f) => {
-                    if f.fract() == 0.0 {
-                        let as_i64 = f as i64;
-                        if as_i64 as f64 == f {
-                            return cel_parser::Atom::Int(as_i64);
-                        }
-                        let as_u64 = f as u64;
-                        if as_u64 as f64 == f {
-                            return cel_parser::Atom::UInt(as_u64);
-                        }
-                    }
-                    return cel_parser::Atom::Float(f);
-                }
-                _ => {}
-            }
-            atom
-        }
-        _ => atom,
-    }
-}
-
-/**
-* Tries parsing a string value as a number, and if it is a number, converts it.
-*/
-fn is_number(passable: PassableValue) -> PassableValue {
-    match passable.clone() {
-        PassableValue::String(data) => {
-            match data.parse::<i64>() {
-                Ok(i) => return PassableValue::Int(i),
-                _ => {}
-            }
-            match data.parse::<u64>() {
-                Ok(i) => return PassableValue::UInt(i),
-                _ => {}
-            }
-            match data.parse::<f64>() {
-                Ok(f) => {
-                    if f.fract() == 0.0 {
-                        let as_i64 = f as i64;
-                        if as_i64 as f64 == f {
-                            return PassableValue::Int(as_i64);
-                        }
-                        let as_u64 = f as u64;
-                        if as_u64 as f64 == f {
-                            return PassableValue::UInt(as_u64);
-                        }
-                    }
-                    return PassableValue::Float(f);
-                }
-                _ => {}
-            }
-            passable
-        }
-        _ => passable,
-    }
-}
-
-/**
- * Extracts variable paths that are compared against string literals in the expression.
- * These variables should NOT have their string values converted to numbers during normalization,
- * as they are meant to be compared as strings (e.g., version comparisons like "009.000" > "007.003.001").
- */
-fn extract_string_compared_variables(expr: &Expression) -> HashSet<String> {
-    let mut result = HashSet::new();
-    extract_string_compared_variables_internal(expr, &mut result);
-    result
-}
-
-fn extract_string_compared_variables_internal(expr: &Expression, result: &mut HashSet<String>) {
-    match expr {
-        Expression::Relation(lhs, _op, rhs) => {
-            // Check if RHS is a string literal
-            let rhs_is_string = matches!(rhs.as_ref(), Expression::Atom(cel_parser::Atom::String(_)));
-            // Check if LHS is a string literal
-            let lhs_is_string = matches!(lhs.as_ref(), Expression::Atom(cel_parser::Atom::String(_)));
-
-            if rhs_is_string {
-                // Extract variable path from LHS
-                if let Some(path) = extract_variable_path(lhs) {
-                    result.insert(path);
-                }
-            }
-            if lhs_is_string {
-                // Extract variable path from RHS
-                if let Some(path) = extract_variable_path(rhs) {
-                    result.insert(path);
-                }
-            }
-
-            // Continue recursing into both sides
-            extract_string_compared_variables_internal(lhs, result);
-            extract_string_compared_variables_internal(rhs, result);
-        }
-        Expression::And(lhs, rhs) | Expression::Or(lhs, rhs) => {
-            extract_string_compared_variables_internal(lhs, result);
-            extract_string_compared_variables_internal(rhs, result);
-        }
-        Expression::Ternary(cond, if_true, if_false) => {
-            extract_string_compared_variables_internal(cond, result);
-            extract_string_compared_variables_internal(if_true, result);
-            extract_string_compared_variables_internal(if_false, result);
-        }
-        Expression::Unary(_, operand) => {
-            extract_string_compared_variables_internal(operand, result);
-        }
-        Expression::List(elements) => {
-            for elem in elements {
-                extract_string_compared_variables_internal(elem, result);
-            }
-        }
-        Expression::Map(entries) => {
-            for (k, v) in entries {
-                extract_string_compared_variables_internal(k, result);
-                extract_string_compared_variables_internal(v, result);
-            }
-        }
-        Expression::FunctionCall(func, args, _) => {
-            extract_string_compared_variables_internal(func, result);
-            for arg in args {
-                extract_string_compared_variables_internal(arg, result);
-            }
-        }
-        Expression::Member(operand, _) => {
-            extract_string_compared_variables_internal(operand, result);
-        }
-        Expression::Arithmetic(lhs, _, rhs) => {
-            extract_string_compared_variables_internal(lhs, result);
-            extract_string_compared_variables_internal(rhs, result);
-        }
-        _ => {}
-    }
-}
-
-/**
- * Extracts the variable path from a member access expression (e.g., "device.appVersionPadded").
- * Returns None if the expression is not a simple variable path.
- */
-fn extract_variable_path(expr: &Expression) -> Option<String> {
-    match expr {
-        Expression::Ident(name) => Some(name.to_string()),
-        Expression::Member(operand, member) => {
-            let parent_path = extract_variable_path(operand)?;
-            match member.as_ref() {
-                cel_parser::Member::Attribute(attr) => Some(format!("{}.{}", parent_path, attr)),
-                cel_parser::Member::Index(idx_expr) => {
-                    // For index access like device["key"], try to extract the key
-                    if let Expression::Atom(cel_parser::Atom::String(s)) = idx_expr.as_ref() {
-                        Some(format!("{}.{}", parent_path, s))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        }
-        _ => None,
     }
 }
 
@@ -2320,7 +2108,8 @@ mod tests {
         );
         assert_eq!(res4, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
 
-        // Test device.some_key == 1 - left side is device property, right side is integer 1
+        // Test device.some_key == "1" - int compared to string should be false (different types)
+        // In standard CEL, 1 != "1" because they are different types
         let res5 = evaluate_with_context(
             r#"{
             "variables": {
@@ -2341,9 +2130,10 @@ mod tests {
             .to_string(),
             ctx.clone(),
         );
-        assert_eq!(res5, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+        // Int != String in CEL, so this should be false
+        assert_eq!(res5, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
 
-        // Test device.some_key == 1.23 - left side is device property, right side is float 1.23
+        // Test device.some_key == "1.23" - float compared to string should be false (different types)
         let res6 = evaluate_with_context(
             r#"{
             "variables": {
@@ -2364,7 +2154,8 @@ mod tests {
             .to_string(),
             ctx.clone(),
         );
-        assert_eq!(res6, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+        // Float != String in CEL, so this should be false
+        assert_eq!(res6, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
     }
     #[test]
     fn test_hasfn_wrapping_for_device_functions() {
@@ -2416,22 +2207,21 @@ mod tests {
         });
 
         // Test that utility functions are registered and working
-        // We mainly test that the functions exist and can convert basic string types
-
-        // Test toInt extension method - this works because string normalization happens first
+        // Numeric strings stay as strings (not converted to numbers)
         let res = evaluate_with_context(
             r#"{"variables": {"map": {"str_num": {"type": "string", "value": "42"}}}, "expression": "str_num"}"#.to_string(),
             ctx.clone(),
         );
-        assert_eq!(res, "{\"Ok\":{\"type\":\"int\",\"value\":42}}");
+        // String "42" should stay as string, not be converted to int
+        assert_eq!(res, "{\"Ok\":{\"type\":\"string\",\"value\":\"42\"}}");
 
-        // Test that invalid string conversion returns null (toInt function was removed)
+        // Test that non-numeric strings also stay as strings
         let res = evaluate_with_context(
             r#"{"variables": {"map": {"str_invalid": {"type": "string", "value": "not_a_number"}}}, "expression": "str_invalid"}"#.to_string(),
             ctx.clone(),
         );
-        // Should just return the string as-is since automatic conversion doesn't happen for invalid strings
-        assert!(res.contains("not_a_number") || res.contains("Null"));
+        // Should just return the string as-is
+        assert!(res.contains("not_a_number"));
 
         // Test utility functions that still exist - string conversion functions
         let res = evaluate_with_context(
@@ -2499,7 +2289,7 @@ mod tests {
             map: HashMap::new(),
         });
 
-        // Test simple boolean variable
+        // Test that numeric strings stay as strings (not converted to numbers)
         let simple_test = r#"
         {
             "variables": {
@@ -2516,7 +2306,8 @@ mod tests {
         .to_string();
 
         let res_simple = evaluate_with_context(simple_test, ctx.clone());
-        assert_eq!(res_simple, "{\"Ok\":{\"type\":\"int\",\"value\":1}}");
+        // String "1" should stay as string, not be converted to int
+        assert_eq!(res_simple, "{\"Ok\":{\"type\":\"string\",\"value\":\"1\"}}");
 
         let data = r#"
         {
@@ -2589,7 +2380,8 @@ mod tests {
             .to_string(),
             ctx.clone(),
         );
-        assert_eq!(res2, "{\"Ok\":{\"type\":\"int\",\"value\":8}}");
+        // String "8.00000" should stay as string, not be converted to int
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"string\",\"value\":\"8.00000\"}}");
     }
 
     #[test]
@@ -2639,7 +2431,7 @@ mod tests {
 
     #[test]
     fn test_normalization_edge_cases() {
-        // Test is_number with edge cases
+        // Test that numeric strings stay as strings (not converted to numbers)
         let edge_cases = vec![
             PassableValue::String("18446744073709551615".to_string()), // u64 max
             PassableValue::String("-9223372036854775808".to_string()), // i64 min
@@ -2655,17 +2447,11 @@ mod tests {
 
         for case in edge_cases {
             let normalized = normalize_variables(case.clone());
-            // Should not panic and should return some valid value
-            match normalized {
-                PassableValue::String(_)
-                | PassableValue::Int(_)
-                | PassableValue::UInt(_)
-                | PassableValue::Float(_) => {}
-                _ => panic!("Unexpected normalization result for {:?}", case),
-            }
+            // Numeric strings should stay as strings (not converted to numbers)
+            assert_eq!(normalized, case, "Numeric string should stay as string");
         }
 
-        // Test nested normalization
+        // Test nested normalization - only "true"/"false" are converted
         let mut nested_map = std::collections::HashMap::new();
         nested_map.insert(
             "nested_bool".to_string(),
@@ -2680,8 +2466,10 @@ mod tests {
         let normalized = normalize_variables(complex_value);
 
         if let PassableValue::PMap(map) = normalized {
+            // "true" string should become Bool(true)
             assert_eq!(map.get("nested_bool"), Some(&PassableValue::Bool(true)));
-            assert_eq!(map.get("nested_num"), Some(&PassableValue::Int(42)));
+            // "42" string should stay as String("42") - not converted to Int
+            assert_eq!(map.get("nested_num"), Some(&PassableValue::String("42".to_string())));
         } else {
             panic!("Expected normalized map");
         }
@@ -2892,18 +2680,6 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_string_compared_variables() {
-        // Test that we correctly extract variable paths from expressions
-        use cel_parser::parse;
-
-        let expr = parse(r#"device.appVersionPadded > "007.003.001""#).unwrap();
-        let skip_set = super::extract_string_compared_variables(&expr);
-
-        println!("Skip set: {:?}", skip_set);
-        assert!(skip_set.contains("device.appVersionPadded"), "Should contain device.appVersionPadded, got: {:?}", skip_set);
-    }
-
-    #[test]
     fn test_version_string_comparison_not_normalized_to_number() {
         // Test that version strings like "009.000" are NOT converted to numbers
         // when compared against string literals like "007.003.001"
@@ -2992,6 +2768,37 @@ mod tests {
         // It should stay as String("009.000") and compare correctly
         assert!(!res4.contains("Err"), "Should not error, got: {}", res4);
         assert!(res4.contains("true"), "Expected true but got: {}", res4);
+    }
+
+    #[test]
+    fn test_app_build_string_equality() {
+        // Test for device.appBuildString == "5690201"
+        // This was a bug where the string literal "5690201" was normalized to Int(5690201),
+        // causing the comparison to fail when the variable was a string.
+        // The fix: don't convert numeric strings to numbers - quoted strings stay as strings.
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+
+        // Test case: device.appBuildString == "5690201" where appBuildString = "5690201"
+        let res = evaluate_with_context(
+            r#"{
+                "variables": {
+                    "map": {
+                        "device": {
+                            "type": "map",
+                            "value": {
+                                "appBuildString": {"type": "string", "value": "5690201"}
+                            }
+                        }
+                    }
+                },
+                "expression": "device.appBuildString == \"5690201\""
+            }"#.to_string(),
+            ctx.clone(),
+        );
+
+        assert!(res.contains("true"), "Expected true but got: {}", res);
     }
 
     #[test]
