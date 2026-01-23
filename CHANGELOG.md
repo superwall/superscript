@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 1.0.13
+
+### Fixes
+
+- Simplify string normalization: numeric strings now stay as strings instead of being converted to numbers. This fixes issues where `device.appBuildString == "5690201"` would fail because the string was incorrectly converted to an integer. Only "true" and "false" strings are converted to booleans; all other strings remain as strings. Removed the complex `extract_string_compared_variables` mechanism in favor of this simpler approach.
+
 ## 1.0.12
 
 - Bump version
@@ -7,56 +13,68 @@
 ## 1.0.11
 
 ## Fixes
+
 - Fixes comparison issue of padded numbers by skipping expression conversion and normalization in special cases
 
 ## 1.0.10
 
-## Fixes
+### Fixes
+
 - Removes modulemap from outputs
 
 ## 1.0.9
 
 ## Fixes
+
 - Ensures XC projects also work with module SPM setup
+
 ## 1.0.8
 
 ## Fixes
+
 - Fix generic module name
 
 ## 1.0.7
 
 ## Fixes
+
 - Fix iOS build script
 
 ## 1.0.6
 
 ## Fixes
+
 - Ensure new module headers point to right places
 
 ## 1.0.5
 
 ## Fixes
+
 - Fixes namespaces for SPM module headers
 
 ## 1.0.4
 
 ## Enhancements
+
 - Disable Android Cleaner in UniFFI builds
 
 ## 1.0.3
 
 ## Enhancements
+
 - Ensure that previously set compilation flags do not affect Android compilation
 - Add flags to ensure common page size is being passed to Cross
 
 ## 1.0.2.
 
 ## Enhancements
+
 - Removes log print, reduces binary size
 
 ## 1.0.1
 
 ## Enhancements
+
 - Adds `hasFn` function that checks for the existance of a function or returns `false`
 - Enhance `hasFn` and `has` checks to do the following:
   - If a `device.` or `computed.` function is used, or a variable is accessed in an expression
@@ -69,16 +87,19 @@
 - Removes `string.toBool()`,`string.toInt()`, `string.toFloat()` functions as every possible valid atom conversion is done in the AST
 
 ## General
+
 - Adds more tests, improves test coverage, adds displaying coverage badge
 - Improves `README.MD` and adds an `interpretation-flow.md` to serve as a guide for how things are interpreted
 
 ## 1.0.0
 
 ## Enhancements
+
 - Adds truthiness and string normalization so value such as "true", "false", "1.1" etc are treated as true, false, 1.1. This occurs on both left and right side of an expression.
 - Adds conversion methods `bool.toString()`, `float.toString()`, `int.toString()`, `bool.toString()` and `string.toBool()`,`string.toInt()`, `string.toFloat()` to enable typecasting in CEL
 
 ## Truthiness
+
 - Fixes issues with undeclared references for properties and functions by wrapping them in a has(x)? x : Null tertiary expression
 
 ## 0.2.8
@@ -100,17 +121,21 @@
 ## 0.2.5
 
 ### Enhancements
+
 - Moves the HostContext to a Sync version with callback
 - Updates Android NDK to support 16kb page sizes
 - Updates Uniffi version
 
 ## 0.2.4
+
 - Fix aarch64 build for Android
 
 ## 0.2.3
+
 - Fix aarch64 build for Android
 
 ## 0.2.2
+
 - Version bump for deployment purposes
 
 ## 0.2.1

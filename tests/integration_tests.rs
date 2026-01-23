@@ -137,7 +137,7 @@ fn test_normalize_variables_function() {
 
 #[test]
 fn test_normalization_edge_cases() {
-    // Test is_number with edge cases
+    // Test that numeric strings stay as strings (not converted to numbers)
     let edge_cases = vec![
         PassableValue::String("18446744073709551615".to_string()), // u64 max
         PassableValue::String("-9223372036854775808".to_string()), // i64 min
@@ -152,16 +152,10 @@ fn test_normalization_edge_cases() {
     ];
     for case in edge_cases {
         let normalized = normalize_variables(case.clone());
-        // Should not panic and should return some valid value
-        match normalized {
-            PassableValue::String(_)
-            | PassableValue::Int(_)
-            | PassableValue::UInt(_)
-            | PassableValue::Float(_) => {}
-            _ => panic!("Unexpected normalization result for {:?}", case),
-        }
+        // Numeric strings should stay as strings (not converted to numbers)
+        assert_eq!(normalized, case, "Numeric string should stay as string");
     }
-    // Test nested normalization
+    // Test nested normalization - only "true"/"false" are converted to booleans
     let mut nested_map = std::collections::HashMap::new();
     nested_map.insert(
         "nested_bool".to_string(),
@@ -176,8 +170,10 @@ fn test_normalization_edge_cases() {
     let normalized = normalize_variables(complex_value);
 
     if let PassableValue::PMap(map) = normalized {
+        // "true" string should become Bool(true)
         assert_eq!(map.get("nested_bool"), Some(&PassableValue::Bool(true)));
-        assert_eq!(map.get("nested_num"), Some(&PassableValue::Int(42)));
+        // "42" string should stay as String("42") - not converted to Int
+        assert_eq!(map.get("nested_num"), Some(&PassableValue::String("42".to_string())));
     } else {
         panic!("Expected normalized map");
     }

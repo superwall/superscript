@@ -411,13 +411,17 @@ fn test_complex_device_computed_resolution() {
 #[test]
 fn test_all_atom_types_normalization() {
     // Test normalize_ast_variables with all atom types
+    // Note: Only "true" and "false" strings are converted to booleans.
+    // Numeric strings stay as strings because quoted literals should preserve their type.
     use cel_parser::Atom;
 
-    // Test string atom normalization
+    // Test that numeric string atoms stay as strings (not converted to numbers)
+    // This is correct behavior: "42" in an expression should stay as String("42")
     let string_atom = Atom::String(Arc::new("42".to_string()));
-    let result = normalize_ast_variables(string_atom);
-    assert_eq!(result, Atom::Int(42));
+    let result = normalize_ast_variables(string_atom.clone());
+    assert_eq!(result, string_atom); // Should stay as String
 
+    // Test "true" and "false" strings are converted to booleans
     let bool_string = Atom::String(Arc::new("true".to_string()));
     let result = normalize_ast_variables(bool_string);
     assert_eq!(result, Atom::Bool(true));
@@ -426,21 +430,23 @@ fn test_all_atom_types_normalization() {
     let result = normalize_ast_variables(false_string);
     assert_eq!(result, Atom::Bool(false));
 
+    // Large numeric strings stay as strings
     let uint_string = Atom::String(Arc::new("18446744073709551615".to_string()));
-    let result = normalize_ast_variables(uint_string);
-    assert_eq!(result, Atom::UInt(18446744073709551615));
+    let result = normalize_ast_variables(uint_string.clone());
+    assert_eq!(result, uint_string); // Should stay as String
 
+    // Float-like strings stay as strings
     let float_string = Atom::String(Arc::new("3.14159".to_string()));
-    let result = normalize_ast_variables(float_string);
-    assert_eq!(result, Atom::Float(3.14159));
+    let result = normalize_ast_variables(float_string.clone());
+    assert_eq!(result, float_string); // Should stay as String
 
     let fractional_zero = Atom::String(Arc::new("42.0".to_string()));
-    let result = normalize_ast_variables(fractional_zero);
-    assert_eq!(result, Atom::Int(42)); // Should convert to int
+    let result = normalize_ast_variables(fractional_zero.clone());
+    assert_eq!(result, fractional_zero); // Should stay as String
 
     let non_numeric = Atom::String(Arc::new("not_a_number".to_string()));
-    let result = normalize_ast_variables(non_numeric);
-    assert_eq!(result, Atom::String(Arc::new("not_a_number".to_string())));
+    let result = normalize_ast_variables(non_numeric.clone());
+    assert_eq!(result, non_numeric); // Should stay as String
 
     // Test non-string atoms (should return unchanged)
     let int_atom = Atom::Int(42);
