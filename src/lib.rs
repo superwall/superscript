@@ -2227,6 +2227,81 @@ mod tests {
         );
         // Float compared to numeric string should be true (1.23 == "1.23")
         assert_eq!(res6, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test 3.0 == "003.000" - float compared to string with leading zeros
+        // The string "003.000" should be coerced to 3.0, so 3.0 == 3.0 is true
+        let res7 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "some_key": {
+                                "type": "float",
+                                "value": 3.0
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "device.some_key == \"003.000\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        // Float 3.0 compared to string "003.000" should be true (3.0 == 3.0 after coercion)
+        assert_eq!(res7, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test that type coercion works correctly with logical AND
+        // "true && 1 == '1'" should become "true && ((1 == '1') || (1 == 1))"
+        // which evaluates to true && (false || true) = true
+        let res8 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "some_key": {
+                                "type": "int",
+                                "value": 1
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "true && device.some_key == \"1\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        // true && (1 == "1") should be true after coercion
+        assert_eq!(res8, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Also test with false && to make sure AND logic is preserved
+        let res9 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "some_key": {
+                                "type": "int",
+                                "value": 1
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "false && device.some_key == \"1\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        // false && anything should be false
+        assert_eq!(res9, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
     }
     #[test]
     fn test_hasfn_wrapping_for_device_functions() {
