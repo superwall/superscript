@@ -12,7 +12,7 @@ use crate::ExecutableType::{CompiledProgram, AST};
 use cel_interpreter::extractors::This;
 use cel_interpreter::objects::{Key, Map, TryIntoValue};
 use cel_interpreter::{Context, ExecutionError, Expression, FunctionContext, Program, Value};
-use cel_parser::parse;
+use cel_parser::{parse, RelationOp};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -627,6 +627,78 @@ pub fn normalize_ast_variables(atom: cel_parser::Atom) -> cel_parser::Atom {
 }
 
 /**
+ * Checks if a string atom represents a numeric value and returns the numeric atom if so.
+ * Returns None if the string is not a valid numeric representation.
+ */
+fn try_parse_string_to_number(s: &str) -> Option<cel_parser::Atom> {
+    // Try to parse as int first
+    if let Ok(i) = s.parse::<i64>() {
+        return Some(cel_parser::Atom::Int(i));
+    }
+    // Then try to parse as float
+    if let Ok(f) = s.parse::<f64>() {
+        return Some(cel_parser::Atom::Float(f));
+    }
+    None
+}
+
+/**
+ * Creates a type-coerced comparison expression for equality/inequality operators.
+ * When comparing with a numeric string, this creates an OR expression that matches
+ * both the string and numeric representations.
+ *
+ * For example: `x == "1"` becomes `(x == "1") || (x == 1)`
+ * This allows both `"1" == "1"` and `1 == "1"` to return true.
+ *
+ * For NotEquals: `x != "1"` becomes `(x != "1") && (x != 1)`
+ * This ensures that neither representation matches.
+ */
+fn create_type_coerced_comparison(
+    lhs: Box<Expression>,
+    op: RelationOp,
+    rhs: Box<Expression>,
+) -> Expression {
+    // Only apply coercion for Equals and NotEquals
+    let is_equality = matches!(op, RelationOp::Equals | RelationOp::NotEquals);
+    if !is_equality {
+        return Expression::Relation(lhs, op, rhs);
+    }
+
+    // Check if RHS is a string atom that can be parsed as a number
+    if let Expression::Atom(cel_parser::Atom::String(s)) = rhs.as_ref() {
+        if let Some(numeric_atom) = try_parse_string_to_number(s.as_str()) {
+            let string_comparison = Expression::Relation(
+                lhs.clone(),
+                op.clone(),
+                rhs,
+            );
+            let numeric_comparison = Expression::Relation(
+                lhs,
+                op.clone(),
+                Box::new(Expression::Atom(numeric_atom)),
+            );
+
+            // For Equals: (string_cmp || numeric_cmp) - either match is success
+            // For NotEquals: (string_cmp && numeric_cmp) - both must not match
+            return match op {
+                RelationOp::Equals => Expression::Or(
+                    Box::new(string_comparison),
+                    Box::new(numeric_comparison),
+                ),
+                RelationOp::NotEquals => Expression::And(
+                    Box::new(string_comparison),
+                    Box::new(numeric_comparison),
+                ),
+                _ => unreachable!(),
+            };
+        }
+    }
+
+    // No coercion needed, return original comparison
+    Expression::Relation(lhs, op, rhs)
+}
+
+/**
  * Check if an expression is an atomic value (string, int, float, bool, etc.)
  */
 fn is_expression_atom(expr: &Expression) -> bool {
@@ -988,14 +1060,14 @@ fn transform_expression_for_null_safety_internal(
                         Box::new(default_value),
                     );
                     
-                    Expression::Relation(
+                    create_type_coerced_comparison(
                         Box::new(safe_lhs),
                         op,
                         Box::new(transformed_rhs),
                     )
                 } else {
                     // Right side is not atom - wrap whole expression
-                    let original_relation = Expression::Relation(
+                    let original_relation = create_type_coerced_comparison(
                         lhs.clone(),
                         op,
                         Box::new(transform_expression_for_null_safety_internal(
@@ -1053,14 +1125,14 @@ fn transform_expression_for_null_safety_internal(
                                     Box::new(default_value),
                                 );
                                 
-                                Expression::Relation(
+                                create_type_coerced_comparison(
                                     Box::new(hasfn_ternary_lhs),
                                     op,
                                     Box::new(transformed_rhs),
                                 )
                             } else {
                                 // Right side is not atom - wrap whole relation with hasFn condition
-                                let original_relation = Expression::Relation(
+                                let original_relation = create_type_coerced_comparison(
                                     lhs.clone(),
                                     op,
                                     Box::new(transformed_rhs),
@@ -1074,7 +1146,7 @@ fn transform_expression_for_null_safety_internal(
                             }
                         } else {
                             // Fallback - transform normally
-                            Expression::Relation(
+                            create_type_coerced_comparison(
                                 Box::new(transform_expression_for_null_safety_internal(
                                     *lhs,
                                     inside_has,
@@ -1088,7 +1160,7 @@ fn transform_expression_for_null_safety_internal(
                         }
                     } else {
                         // Fallback - transform normally
-                        Expression::Relation(
+                        create_type_coerced_comparison(
                             Box::new(transform_expression_for_null_safety_internal(
                                 *lhs,
                                 inside_has,
@@ -1101,8 +1173,8 @@ fn transform_expression_for_null_safety_internal(
                         )
                     }
                 } else {
-                    // Fallback - transform normally  
-                    Expression::Relation(
+                    // Fallback - transform normally
+                    create_type_coerced_comparison(
                         Box::new(transform_expression_for_null_safety_internal(
                             *lhs,
                             inside_has,
@@ -1116,7 +1188,7 @@ fn transform_expression_for_null_safety_internal(
                 }
             } else {
                 // Left side is not simple member access or hasFn ternary, transform normally
-                Expression::Relation(
+                create_type_coerced_comparison(
                     Box::new(transform_expression_for_null_safety_internal(
                         *lhs,
                         inside_has,
@@ -2108,8 +2180,7 @@ mod tests {
         );
         assert_eq!(res4, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
 
-        // Test device.some_key == "1" - int compared to string should be false (different types)
-        // In standard CEL, 1 != "1" because they are different types
+        // Test device.some_key == "1" - int compared to numeric string should be true
         let res5 = evaluate_with_context(
             r#"{
             "variables": {
@@ -2130,10 +2201,10 @@ mod tests {
             .to_string(),
             ctx.clone(),
         );
-        // Int != String in CEL, so this should be false
-        assert_eq!(res5, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+        // Int compared to numeric string should be true (1 == "1")
+        assert_eq!(res5, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
 
-        // Test device.some_key == "1.23" - float compared to string should be false (different types)
+        // Test device.some_key == "1.23" - float compared to numeric string should be true
         let res6 = evaluate_with_context(
             r#"{
             "variables": {
@@ -2154,8 +2225,8 @@ mod tests {
             .to_string(),
             ctx.clone(),
         );
-        // Float != String in CEL, so this should be false
-        assert_eq!(res6, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+        // Float compared to numeric string should be true (1.23 == "1.23")
+        assert_eq!(res6, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
     }
     #[test]
     fn test_hasfn_wrapping_for_device_functions() {
