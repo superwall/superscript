@@ -629,13 +629,21 @@ pub fn normalize_ast_variables(atom: cel_parser::Atom) -> cel_parser::Atom {
 /**
  * Checks if a string atom represents a numeric value and returns the numeric atom if so.
  * Returns None if the string is not a valid numeric representation.
+ *
+ * Parse order: i64 -> u64 -> f64
+ * This ensures large unsigned integers (e.g., "18446744073709551615") are parsed
+ * as UInt rather than losing precision with float conversion.
  */
 fn try_parse_string_to_number(s: &str) -> Option<cel_parser::Atom> {
-    // Try to parse as int first
+    // Try to parse as signed int first
     if let Ok(i) = s.parse::<i64>() {
         return Some(cel_parser::Atom::Int(i));
     }
-    // Then try to parse as float
+    // Then try unsigned int (for large values that overflow i64)
+    if let Ok(u) = s.parse::<u64>() {
+        return Some(cel_parser::Atom::UInt(u));
+    }
+    // Finally try float
     if let Ok(f) = s.parse::<f64>() {
         return Some(cel_parser::Atom::Float(f));
     }
@@ -644,11 +652,12 @@ fn try_parse_string_to_number(s: &str) -> Option<cel_parser::Atom> {
 
 /**
  * Creates a type-coerced comparison expression for equality/inequality operators.
- * When comparing with a numeric string, this creates an OR expression that matches
- * both the string and numeric representations.
+ * When comparing with a numeric string (on either side), this creates an OR expression
+ * that matches both the string and numeric representations.
  *
  * For example: `x == "1"` becomes `(x == "1") || (x == 1)`
- * This allows both `"1" == "1"` and `1 == "1"` to return true.
+ * And symmetrically: `"1" == x` becomes `("1" == x) || (1 == x)`
+ * This allows both `"1" == 1` and `1 == "1"` to return true.
  *
  * For NotEquals: `x != "1"` becomes `(x != "1") && (x != 1)`
  * This ensures that neither representation matches.
@@ -676,6 +685,36 @@ fn create_type_coerced_comparison(
                 lhs,
                 op.clone(),
                 Box::new(Expression::Atom(numeric_atom)),
+            );
+
+            // For Equals: (string_cmp || numeric_cmp) - either match is success
+            // For NotEquals: (string_cmp && numeric_cmp) - both must not match
+            return match op {
+                RelationOp::Equals => Expression::Or(
+                    Box::new(string_comparison),
+                    Box::new(numeric_comparison),
+                ),
+                RelationOp::NotEquals => Expression::And(
+                    Box::new(string_comparison),
+                    Box::new(numeric_comparison),
+                ),
+                _ => unreachable!(),
+            };
+        }
+    }
+
+    // Check if LHS is a string atom that can be parsed as a number (symmetric coercion)
+    if let Expression::Atom(cel_parser::Atom::String(s)) = lhs.as_ref() {
+        if let Some(numeric_atom) = try_parse_string_to_number(s.as_str()) {
+            let string_comparison = Expression::Relation(
+                lhs,
+                op.clone(),
+                rhs.clone(),
+            );
+            let numeric_comparison = Expression::Relation(
+                Box::new(Expression::Atom(numeric_atom)),
+                op.clone(),
+                rhs,
             );
 
             // For Equals: (string_cmp || numeric_cmp) - either match is success
@@ -2302,6 +2341,289 @@ mod tests {
         );
         // false && anything should be false
         assert_eq!(res9, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test symmetric case: "1" == device.some_key (string literal on LHS, int on RHS)
+        // Coercion now works symmetrically - both LHS and RHS strings are coerced
+        let res10 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "some_key": {
+                                "type": "int",
+                                "value": 1
+                            }
+                        }
+                    }
+                }
+            },
+            "expression": "\"1\" == device.some_key"
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        // "1" == 1 should be true with symmetric coercion
+        assert_eq!(res10, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+    }
+
+    #[test]
+    fn test_type_coercion_edge_cases() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+
+        // Test 1.0 == 1 (float == int) - should be true (CEL handles this natively)
+        let res1 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "1.0 == 1"}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res1, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test 1 == 1.0 (int == float) - should be true
+        let res2 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "1 == 1.0"}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test 1.0 == "1" (float == numeric string) - should be true after coercion
+        let res3 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "1.0 == \"1\""}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res3, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test "1.0" == 1 (numeric string == int) - should be true after coercion
+        let res4 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "\"1.0\" == 1"}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res4, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test NotEquals: 1 != "1" - should be false (they are equal after coercion)
+        let res5 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "1 != \"1\""}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res5, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test NotEquals: 1 != "2" - should be true (they are different)
+        let res6 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "1 != \"2\""}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res6, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test NotEquals symmetric: "1" != 2 - should be true
+        let res7 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "\"1\" != 2"}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res7, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test negative numbers: -1 == "-1" - should be true
+        let res8 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "neg_val": {"type": "int", "value": -1}
+                        }
+                    }
+                }
+            },
+            "expression": "device.neg_val == \"-1\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res8, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test negative numbers symmetric: "-1" == device.neg_val
+        let res9 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "neg_val": {"type": "int", "value": -1}
+                        }
+                    }
+                }
+            },
+            "expression": "\"-1\" == device.neg_val"
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res9, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test invalid numeric string: 1 == "abc" - should be false (no coercion for non-numeric)
+        let res10 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "1 == \"abc\""}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res10, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test whitespace: 1 == " 1" - should be false (no trimming)
+        let res11 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "1 == \" 1\""}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res11, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test boolean NotEquals: true != "false" - should be true
+        let res12 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "flag": {"type": "bool", "value": true}
+                        }
+                    }
+                }
+            },
+            "expression": "device.flag != \"false\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res12, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test float with trailing zeros: 1.0 == "1.00" - should be true
+        let res13 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "val": {"type": "float", "value": 1.0}
+                        }
+                    }
+                }
+            },
+            "expression": "device.val == \"1.00\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res13, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test uint: uint == "42"
+        let res14 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "uint_val": {"type": "uint", "value": 42}
+                        }
+                    }
+                }
+            },
+            "expression": "device.uint_val == \"42\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res14, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test empty string: 0 == "" - should be false (empty string is not numeric)
+        let res15 = evaluate_with_context(
+            r#"{"variables": {"map": {}}, "expression": "0 == \"\""}"#.to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res15, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // Test negative float: -1.5 == "-1.5"
+        let res16 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "neg_float": {"type": "float", "value": -1.5}
+                        }
+                    }
+                }
+            },
+            "expression": "device.neg_float == \"-1.5\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res16, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test large uint: max u64 value (18446744073709551615) == string
+        // This tests that u64 parsing is used for values that overflow i64
+        let res17 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "large_uint": {"type": "uint", "value": 18446744073709551615}
+                        }
+                    }
+                }
+            },
+            "expression": "device.large_uint == \"18446744073709551615\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res17, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test large uint symmetric: string on LHS
+        let res18 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "large_uint": {"type": "uint", "value": 18446744073709551615}
+                        }
+                    }
+                }
+            },
+            "expression": "\"18446744073709551615\" == device.large_uint"
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res18, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // Test value just above i64 max (9223372036854775808) - should parse as u64
+        let res19 = evaluate_with_context(
+            r#"{
+            "variables": {
+                "map": {
+                    "device": {
+                        "type": "map",
+                        "value": {
+                            "above_i64_max": {"type": "uint", "value": 9223372036854775808}
+                        }
+                    }
+                }
+            },
+            "expression": "device.above_i64_max == \"9223372036854775808\""
+        }"#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res19, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
     }
     #[test]
     fn test_hasfn_wrapping_for_device_functions() {
