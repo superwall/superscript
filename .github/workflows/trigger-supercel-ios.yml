@@ -9,9 +9,23 @@ jobs:
   trigger_ios_build:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Superscript-iOS Workflow
+      # Legacy iOS repo. Bundles the xcframework directly in git, which
+      # bloats clones. Kept building during the migration window so any
+      # consumers still pinned to it keep getting updates.
+      - name: Trigger legacy Superscript-iOS Workflow
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.PAT }}
           repository: superwall/Superscript-iOS
+          event-type: update-build
+
+      # New slim iOS repo. Distributes the xcframework as a GitHub
+      # Release asset and uses SPM's binaryTarget(url:checksum:) instead
+      # of committing the binary. Once consumers (notably Superwall-iOS)
+      # have migrated, the legacy step above can be removed.
+      - name: Trigger superscript-ios-next Workflow
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PAT }}
+          repository: superwall/superscript-ios-next
           event-type: update-build
