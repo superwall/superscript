@@ -1,0 +1,125 @@
+name: Build, Test, and Publish Superscript NPM Package
+
+on:
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write  
+  packages: write  
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Setup environment
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+      
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      
+      # Build WASM module
+      - name: Make build_wasm.sh executable
+        run: chmod +x build_wasm.sh
+      
+      - name: Build WASM module
+        run: |
+          set -e
+          ./build_wasm.sh
+          if [ $? -ne 0 ]; then
+            echo "WASM build failed"
+            exit 1
+          fi
+      
+      # Node.js example tests
+      - name: Install dependencies for Node example
+        run: |
+          set -e
+          cd examples/node
+          bun install
+          bun install ../../wasm/target/node
+      - name: Run JavaScript example
+        run: |
+          set -e
+          cd examples/node
+          # Run the original JavaScript example
+          echo "Running JavaScript example (test_node_javascript.js)..."
+          bun run test_node_javascript.js
+          if [ $? -ne 0 ]; then
+            echo "JavaScript example execution failed"
+            exit 1
+          fi
+          echo "JavaScript example executed successfully"
+      
+      - name: Run TypeScript compiled example
+        run: |
+          set -e
+          cd examples/node
+          # Run the compiled TypeScript example
+          echo "Running compiled TypeScript example (dist/test_node.js)..."
+          bun run test_node.ts
+          if [ $? -ne 0 ]; then
+            echo "TypeScript compiled example execution failed"
+            exit 1
+          fi
+          echo "TypeScript compiled example executed successfully"
+          
+      # Run Superscript tests
+      - name: Run Superscript tests
+        run: |
+          set -e
+          cd examples/node
+          echo "Running Superscript tests..."
+          bun run test
+          if [ $? -ne 0 ]; then
+            echo "Superscript tests failed"
+            exit 1
+          fi
+          echo "Superscript tests completed successfully"
+      
+      # Browser example test
+      - name: Install dependencies for Browser example
+        run: |
+          set -e
+          cd examples/browser
+          bun install
+          bun install ../../wasm/target/browser
+      
+      - name: Build Browser example
+        run: |
+          set -e
+          cd examples/browser
+          CI=false bun run build
+          if [ ! -d dist ]; then
+            echo "Browser example build failed - build directory not found"
+            exit 1
+          fi
+          echo "Browser example built successfully"
+      
+      # Summarize test results
+      - name: Summarize test results
+        run: |
+          echo "✅ All tests passed successfully!"
+          echo "✓ WASM module built successfully"
+          echo "✓ Node.js JavaScript example ran successfully"
+          echo "✓ Node.js TypeScript example ran successfully"
+          echo "✓ Superscript tests completed successfully"
+          echo "✓ Browser example built successfully"
