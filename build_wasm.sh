@@ -13,6 +13,7 @@ echo "50% - WASM wrapper build successful ✅"
 echo "50% - Building JS bundles"
 mkdir -p ./target/browser
 mkdir -p ./target/node
+bun install
 bun run build
 
 echo "75% - Build done - ✅"
