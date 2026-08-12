@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.0.15
+
+### Fixes
+
+- Fixes a crash where an evaluation error inside a computed/device property call (e.g. an unquoted argument like `daysSince(app_install)`) panicked and aborted the host app. Evaluation errors now propagate and degrade to a non-matching result. (superwall/Superwall-iOS#500)
+- Switches the panic strategy to `unwind` and guards all FFI entry points (`evaluateWithContext`, `evaluateAstWithContext`, `evaluateAst`, `parseToAst`) with `catch_unwind`, so any future evaluator panic is returned as an `{"Err": ...}` result instead of killing the host process.
+- `parseToAst` now returns a serialized error instead of panicking when the expression does not parse.
+
 ## 1.0.13
 
 ### Fixes

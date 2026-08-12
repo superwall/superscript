@@ -95,19 +95,19 @@ done
 
 # For visionOS device
 SDKROOT="$(xcrun --sdk xros --show-sdk-path)" \
-cargo +nightly build -Zbuild-std=std,core,alloc,panic_abort --target=aarch64-apple-visionos --lib --release
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-visionos --lib --release
 # For visionOS simulator
 SDKROOT="$(xcrun --sdk xrsimulator --show-sdk-path)" \
-cargo +nightly build -Zbuild-std=std,core,alloc,panic_abort --target=aarch64-apple-visionos-sim --lib --release
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-visionos-sim --lib --release
 
 # For watchOS device
 SDKROOT="$(xcrun --sdk watchos --show-sdk-path)" \
-cargo +nightly build -Zbuild-std=std,core,alloc,panic_abort --target=arm64_32-apple-watchos --lib --release
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=arm64_32-apple-watchos --lib --release
 # For watchOS simulator
 SDKROOT="$(xcrun --sdk watchsimulator --show-sdk-path)" \
-cargo +nightly build -Zbuild-std=std,core,alloc,panic_abort --target=aarch64-apple-watchos-sim --lib --release
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-watchos-sim --lib --release
 SDKROOT="$(xcrun --sdk watchsimulator --show-sdk-path)" \
-cargo +nightly build -Zbuild-std=std,core,alloc,panic_abort --target=x86_64-apple-watchos-sim --lib --release
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=x86_64-apple-watchos-sim --lib --release
 
 
 # Rename *.modulemap to module.modulemap

@@ -58,12 +58,39 @@ pub trait ResultCallback: Send + Sync {
 }
 
 /**
+ * Runs the body of an FFI entry point, converting any panic into a serialized
+ * `Err` result. Expressions arrive from remote config, so a malformed one must
+ * never abort the host app. Catching requires `panic = "unwind"`; keep
+ * Cargo.toml and the `-Zbuild-std` flags in build_ios.sh in sync with that.
+ */
+fn recovering_from_panics(body: impl FnOnce() -> String) -> String {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(result) => result,
+        Err(panic) => {
+            let message = panic
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".to_string());
+            let error: Result<PassableValue, String> =
+                Err(format!("Expression evaluation panicked: {}", message));
+            serde_json::to_string(&error)
+                .unwrap_or_else(|_| "{\"Err\":\"Expression evaluation panicked\"}".to_string())
+        }
+    }
+}
+
+/**
  * Evaluate a CEL expression with the given AST
  * @param ast The AST Execution Context, serialized as JSON. This defines the AST, the variables, and the platform properties.
  * @param host The host context to use for resolving properties
  * @return The result of the evaluation, either "true" or "false"
  */
 pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>) -> String {
+    recovering_from_panics(move || evaluate_ast_with_context_impl(definition, host))
+}
+
+fn evaluate_ast_with_context_impl(definition: String, host: Arc<dyn HostContext>) -> String {
     let data: Result<ASTExecutionContext, _> = serde_json::from_str(definition.as_str());
     let data = match data {
         Ok(data) => data,
@@ -101,6 +128,10 @@ pub fn evaluate_ast_with_context(definition: String, host: Arc<dyn HostContext>)
  * @return The result of the evaluation, either "true" or "false"
  */
 pub fn evaluate_ast(ast: String) -> String {
+    recovering_from_panics(move || evaluate_ast_impl(ast))
+}
+
+fn evaluate_ast_impl(ast: String) -> String {
     let data: Result<JSONExpression, _> = serde_json::from_str(ast.as_str());
     let data: JSONExpression = match data {
         Ok(data) => data,
@@ -126,6 +157,10 @@ pub fn evaluate_ast(ast: String) -> String {
  */
 
 pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> String {
+    recovering_from_panics(move || evaluate_with_context_impl(definition, host))
+}
+
+fn evaluate_with_context_impl(definition: String, host: Arc<dyn HostContext>) -> String {
     let data: Result<ExecutionContext, _> = serde_json::from_str(definition.as_str());
     let data: ExecutionContext = match data {
         Ok(data) => data,
@@ -168,12 +203,22 @@ pub fn evaluate_with_context(definition: String, host: Arc<dyn HostContext>) -> 
 /**
  * Transforms a given CEL expression into a CEL AST, serialized as JSON.
  * @param expression The CEL expression to parse
- * @return The AST of the expression, serialized as JSON
+ * @return The AST of the expression, serialized as JSON on success, or a
+ * serialized `{"Err": ...}` if the expression does not parse.
  */
 pub fn parse_to_ast(expression: String) -> String {
-    let ast: Result<JSONExpression, _> = parse(expression.as_str()).map(|expr| expr.into());
-    let ast = ast.map_err(|err| err.to_string());
-    serde_json::to_string(&ast.unwrap()).unwrap()
+    recovering_from_panics(move || match parse(expression.as_str()) {
+        Ok(expr) => {
+            let ast: JSONExpression = expr.into();
+            serde_json::to_string(&ast)
+                .unwrap_or_else(|_| "{\"Err\":\"Failed to serialize AST\"}".to_string())
+        }
+        Err(err) => {
+            let error: Result<JSONExpression, String> = Err(err.to_string());
+            serde_json::to_string(&error)
+                .unwrap_or_else(|_| "{\"Err\":\"Failed to parse expression\"}".to_string())
+        }
+    })
 }
 
 /**
@@ -478,6 +523,18 @@ fn execute_with(
                 let host = host_clone.lock(); // Lock the host for safe access
                 match host {
                     Ok(host) => {
+                        // Resolving an argument can fail, e.g. an undeclared reference
+                        // like `daysSince(app_install)`. That must surface as an
+                        // `ExecutionError` (degraded to `Null` by `execute_with`),
+                        // never a panic — a panic here aborts the host app.
+                        let resolved_args = args
+                            .iter()
+                            .map(|expression| {
+                                ftx.ptx
+                                    .resolve(expression)
+                                    .map(|value| DisplayableValue(value).to_passable())
+                            })
+                            .collect::<Result<Vec<_>, ExecutionError>>()?;
                         let prop_result = prop_for(
                             if device.contains_key(&it.0) {
                                 PropType::Device
@@ -485,14 +542,7 @@ fn execute_with(
                                 PropType::Computed
                             },
                             name.clone(),
-                            Some(
-                                args.iter()
-                                    .map(|expression| {
-                                        DisplayableValue(ftx.ptx.resolve(expression).unwrap())
-                                            .to_passable()
-                                    })
-                                    .collect(),
-                            ),
+                            Some(resolved_args),
                             &*host,
                         );
 
@@ -1541,6 +1591,113 @@ mod tests {
             ctx,
         );
         assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
+    }
+
+    /// Builds the execution context from superwall/Superwall-iOS#500: the
+    /// SDK passes the computed-property functions in both `computed` and
+    /// `device`, and the expression comes verbatim from dashboard config.
+    fn dashboard_definition(expression: &str) -> String {
+        format!(
+            r#"{{
+            "variables": {{
+                "map": {{
+                    "device": {{
+                        "type": "map",
+                        "value": {{
+                            "activeEntitlements": {{"type": "list", "value": []}},
+                            "daysSince_app_install": {{"type": "int", "value": 5}}
+                        }}
+                    }}
+                }}
+            }},
+            "computed": {{
+                "minutesSince": [{{"type": "string", "value": "event_name"}}],
+                "hoursSince": [{{"type": "string", "value": "event_name"}}],
+                "daysSince": [{{"type": "string", "value": "event_name"}}]
+            }},
+            "device": {{
+                "minutesSince": [{{"type": "string", "value": "event_name"}}],
+                "hoursSince": [{{"type": "string", "value": "event_name"}}],
+                "daysSince": [{{"type": "string", "value": "event_name"}}]
+            }},
+            "expression": "{}"
+        }}"#,
+            expression
+        )
+    }
+
+    // An unquoted function argument is an undeclared reference. This used to
+    // panic in the argument-resolution closure and abort the host app
+    // (superwall/Superwall-iOS#500); it must degrade to a non-matching result.
+    #[test]
+    fn test_undeclared_reference_in_function_args_returns_gracefully() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        let res = evaluate_with_context(dashboard_definition("daysSince(app_install) >= 1"), ctx);
+        assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
+    }
+
+    // Same as above via the `device.` prefix — the syntax the dashboard
+    // displays for a stored `device.daysSince_app_install` property.
+    #[test]
+    fn test_undeclared_reference_in_device_function_args_returns_gracefully() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        let res = evaluate_with_context(
+            dashboard_definition("device.daysSince(app_install) >= 1"),
+            ctx,
+        );
+        assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
+    }
+
+    // The full filter generated by the dashboard in the incident.
+    #[test]
+    fn test_full_dashboard_filter_with_undeclared_reference_does_not_panic() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+        let res = evaluate_with_context(
+            dashboard_definition(
+                "(size(device.activeEntitlements) == 0) && (daysSince(app_install) >= 1)",
+            ),
+            ctx,
+        );
+        assert_eq!(res, "{\"Ok\":{\"type\":\"Null\"}}");
+    }
+
+    // Control: the correctly-quoted argument still resolves through the host.
+    #[test]
+    fn test_quoted_function_arg_still_resolves_via_host() {
+        let days_since = serde_json::to_string(&PassableValue::Int(5)).unwrap();
+        let ctx = Arc::new(TestContext {
+            map: [("daysSince".to_string(), days_since)]
+                .iter()
+                .cloned()
+                .collect(),
+        });
+        let res = evaluate_with_context(
+            dashboard_definition("daysSince(\\\"app_install\\\") >= 1"),
+            ctx,
+        );
+        assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+    }
+
+    #[test]
+    fn test_panic_guard_converts_panic_to_err_json() {
+        let res = recovering_from_panics(|| panic!("boom"));
+        assert_eq!(res, "{\"Err\":\"Expression evaluation panicked: boom\"}");
+    }
+
+    #[test]
+    fn test_parse_to_ast_invalid_expression_returns_err() {
+        let res = parse_to_ast("daysSince(".to_string());
+        assert!(
+            res.starts_with("{\"Err\":"),
+            "expected an Err result, got: {}",
+            res
+        );
     }
 
     #[test]
