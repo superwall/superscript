@@ -5,8 +5,10 @@
 ### Fixes
 
 - Fixes a crash where an evaluation error inside a computed/device property call (e.g. an unquoted argument like `daysSince(app_install)`) panicked and aborted the host app. Evaluation errors now propagate and degrade to a non-matching result. (superwall/Superwall-iOS#500)
-- Switches the panic strategy to `unwind` and guards all FFI entry points (`evaluateWithContext`, `evaluateAstWithContext`, `evaluateAst`, `parseToAst`) with `catch_unwind`, so any future evaluator panic is returned as an `{"Err": ...}` result instead of killing the host process.
+- Switches the panic strategy to `unwind` and guards all FFI entry points (`evaluateWithContext`, `evaluateAstWithContext`, `evaluateAst`, `parseToAst`) with `catch_unwind`, so on the native iOS/Android builds any future evaluator panic is returned as an `{"Err": ...}` result instead of killing the host process. The WASM/npm build is unaffected by this guard (`wasm32-unknown-unknown` is abort-only); there the protection comes from the error-propagation fix above.
 - `parseToAst` now returns a serialized error instead of panicking when the expression does not parse.
+
+Version 1.0.14 is intentionally skipped: that tag was already used by the `superscript-ios-next` release pipeline.
 
 ## 1.0.13
 

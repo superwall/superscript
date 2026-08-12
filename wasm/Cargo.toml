@@ -15,12 +15,8 @@ wasm-bindgen-futures = "0.4.43"
 futures = "0.3.30"
 console_error_panic_hook = "0.1.7"
 
-[profile.release]
-lto = true
-opt-level = "z"  # Optimize for size.
-codegen-units = 1
-panic = "abort"
-strip=true
+# No [profile.release] here: cargo ignores profiles in non-root workspace
+# members; the workspace root's profile governs this crate too.
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

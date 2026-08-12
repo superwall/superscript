@@ -36,8 +36,9 @@ debug=false
 incremental = false
 overflow-checks = false
 codegen-units = 1
-# Must stay "unwind": the FFI entry points rely on catch_unwind so a panic
-# (e.g. from a malformed remote expression) can't abort the host app.
+# Must stay "unwind": the uniffi FFI entry points rely on catch_unwind so a
+# panic (e.g. from a malformed remote expression) can't abort the host app.
+# No effect on wasm32-unknown-unknown, whose target spec is abort-only.
 panic = "unwind"
 strip = true
 

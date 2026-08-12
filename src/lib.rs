@@ -62,6 +62,8 @@ pub trait ResultCallback: Send + Sync {
  * `Err` result. Expressions arrive from remote config, so a malformed one must
  * never abort the host app. Catching requires `panic = "unwind"`; keep
  * Cargo.toml and the `-Zbuild-std` flags in build_ios.sh in sync with that.
+ * On wasm32-unknown-unknown panics still trap (the target is abort-only), so
+ * the wasm build relies on errors being propagated rather than caught.
  */
 fn recovering_from_panics(body: impl FnOnce() -> String) -> String {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
