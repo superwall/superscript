@@ -6,11 +6,11 @@ on:
       - master
 
 jobs:
-  trigger_ios_build:
+  trigger_android_build:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger CEL-Android Workflow
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ secrets.PAT }}
           repository: superwall/Superscript-Android

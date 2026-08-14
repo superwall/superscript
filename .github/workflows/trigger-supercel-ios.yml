@@ -13,7 +13,7 @@ jobs:
       # bloats clones. Kept building during the migration window so any
       # consumers still pinned to it keep getting updates.
       - name: Trigger legacy Superscript-iOS Workflow
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ secrets.PAT }}
           repository: superwall/Superscript-iOS
@@ -24,7 +24,7 @@ jobs:
       # of committing the binary. Once consumers (notably Superwall-iOS)
       # have migrated, the legacy step above can be removed.
       - name: Trigger superscript-ios-next Workflow
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ secrets.PAT }}
           repository: superwall/superscript-ios-next
