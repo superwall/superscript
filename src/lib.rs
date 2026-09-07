@@ -790,13 +790,6 @@ fn create_type_coerced_comparison(
 }
 
 /**
- * Check if an expression is an atomic value (string, int, float, bool, etc.)
- */
-fn is_expression_atom(expr: &Expression) -> bool {
-    matches!(expr, Expression::Atom(_))
-}
-
-/**
  * Check if an expression contains Member access that needs null safety transformation
  */
 fn expression_has_member_access(expr: &Expression) -> bool {
@@ -832,37 +825,14 @@ fn expression_has_member_access(expr: &Expression) -> bool {
 }
 
 /**
- * Get the default null value for an atomic expression based on its type
+ * Check whether an expression is the literal `null`.
+ *
+ * Comparing against `null` is how an expression asks "is this field missing?",
+ * so those relations keep resolving the missing side to null rather than
+ * dropping out to false.
  */
-fn get_default_value_for_atom(expr: &Expression) -> Expression {
-    match expr {
-        Expression::Atom(atom) => {
-            match atom {
-                cel_parser::Atom::String(_) => Expression::Atom(cel_parser::Atom::String(Arc::new("".to_string()))),
-                cel_parser::Atom::Int(_) => Expression::Atom(cel_parser::Atom::Int(0)),
-                cel_parser::Atom::UInt(_) => Expression::Atom(cel_parser::Atom::UInt(0)),
-                cel_parser::Atom::Float(_) => Expression::Atom(cel_parser::Atom::Float(0.0)),
-                cel_parser::Atom::Bool(_) => Expression::Atom(cel_parser::Atom::Bool(false)),
-                _ => Expression::Atom(cel_parser::Atom::Null),
-            }
-        },
-        _ => Expression::Atom(cel_parser::Atom::Null),
-    }
-}
-
-/**
- * Get the default null value for an expression that may have been transformed
- * This handles cases where the original atom may have been normalized
- */
-fn get_default_value_for_atom_expression(expr: &Expression) -> Expression {
-    match expr {
-        Expression::Atom(atom) => get_default_value_for_atom(expr),
-        // If it's not an atom directly, try to extract the atom type if possible
-        _ => {
-            // For complex expressions, return a safe default
-            Expression::Atom(cel_parser::Atom::Null)
-        }
-    }
+fn is_null_atom(expr: &Expression) -> bool {
+    matches!(expr, Expression::Atom(cel_parser::Atom::Null))
 }
 
 // Helper function to check if an expression is a hasFn wrapped function call
@@ -1126,73 +1096,61 @@ fn transform_expression_for_null_safety_internal(
             if lhs_is_simple_member {
                 // First transform the right-hand side to handle normalization
                 let transformed_rhs = transform_expression_for_null_safety_internal(
-                    *rhs.clone(),
+                    *rhs,
                     inside_has,
                     supported_functions,
                     device_functions,
                     computed_functions,
                 );
-                
-                // Check if the original right side is an atom to determine transformation strategy
-                let rhs_is_atom = is_expression_atom(&rhs);
-                
-                if rhs_is_atom {
-                    // Right side is atom - use default value for atom type
-                    // Use the transformed version to get the correct normalized type
-                    let default_value = get_default_value_for_atom_expression(&transformed_rhs);
-                    
+
+                let has_call = Expression::FunctionCall(
+                    Box::new(Expression::Ident(Arc::new("has".to_string()))),
+                    None,
+                    vec![*lhs.clone()],
+                );
+
+                if is_null_atom(&transformed_rhs) {
+                    // `field == null` is asking whether the field is there, so give
+                    // the missing side null and let the comparison run.
                     let safe_lhs = Expression::Ternary(
-                        Box::new(Expression::FunctionCall(
-                            Box::new(Expression::Ident(Arc::new("has".to_string()))),
-                            None,
-                            vec![*lhs.clone()],
-                        )),
-                        lhs.clone(),
-                        Box::new(default_value),
+                        Box::new(has_call),
+                        lhs,
+                        Box::new(Expression::Atom(cel_parser::Atom::Null)),
                     );
-                    
+
                     create_type_coerced_comparison(
                         Box::new(safe_lhs),
                         op,
                         Box::new(transformed_rhs),
                     )
                 } else {
-                    // Right side is not atom - wrap whole expression
+                    // A field that isn't there has no value to compare, so the whole
+                    // relation is wrapped and the comparison simply doesn't match.
+                    // Filling in a type default instead would make a missing bool equal
+                    // false, a missing number equal 0 and a missing string equal "".
                     let original_relation = create_type_coerced_comparison(
-                        lhs.clone(),
+                        lhs,
                         op,
-                        Box::new(transform_expression_for_null_safety_internal(
-                            *rhs,
-                            inside_has,
-                            supported_functions,
-                            device_functions,
-                            computed_functions,
-                        )),
+                        Box::new(transformed_rhs),
                     );
-                    
+
                     Expression::Ternary(
-                        Box::new(Expression::FunctionCall(
-                            Box::new(Expression::Ident(Arc::new("has".to_string()))),
-                            None,
-                            vec![*lhs],
-                        )),
+                        Box::new(has_call),
                         Box::new(original_relation),
                         Box::new(Expression::Atom(cel_parser::Atom::Bool(false))),
                     )
                 }
             } else if lhs_needs_hasfn_wrapping {
                 // Handle device/computed function call in relation (like device.func() > 10)
-                // Create hasFn wrapping with type-aware defaults
+                // Create hasFn wrapping, with a missing function meaning "no match"
                 let transformed_rhs = transform_expression_for_null_safety_internal(
-                    *rhs.clone(),
+                    *rhs,
                     inside_has,
                     supported_functions,
                     device_functions,
                     computed_functions,
                 );
-                
-                let rhs_is_atom = is_expression_atom(&rhs);
-                
+
                 // Extract function name for hasFn check
                 if let Expression::FunctionCall(func, this_expr, _args) = lhs.as_ref() {
                     if let (Expression::Ident(func_name), Some(this_box)) = (func.as_ref(), this_expr.as_ref()) {
@@ -1206,29 +1164,30 @@ fn transform_expression_for_null_safety_internal(
                                 vec![Expression::Atom(cel_parser::Atom::String(Arc::new(hasfn_arg)))],
                             );
                             
-                            if rhs_is_atom {
-                                // Right side is atom - use type-aware default value
-                                let default_value = get_default_value_for_atom_expression(&transformed_rhs);
-                                
+                            if is_null_atom(&transformed_rhs) {
+                                // `device.fn() == null` is asking whether the host
+                                // exposes the function at all.
                                 let hasfn_ternary_lhs = Expression::Ternary(
                                     Box::new(hasfn_call),
                                     lhs.clone(),
-                                    Box::new(default_value),
+                                    Box::new(Expression::Atom(cel_parser::Atom::Null)),
                                 );
-                                
+
                                 create_type_coerced_comparison(
                                     Box::new(hasfn_ternary_lhs),
                                     op,
                                     Box::new(transformed_rhs),
                                 )
                             } else {
-                                // Right side is not atom - wrap whole relation with hasFn condition
+                                // A function the host doesn't expose has no result to
+                                // compare, so the whole relation is wrapped and simply
+                                // doesn't match.
                                 let original_relation = create_type_coerced_comparison(
                                     lhs.clone(),
                                     op,
                                     Box::new(transformed_rhs),
                                 );
-                                
+
                                 Expression::Ternary(
                                     Box::new(hasfn_call),
                                     Box::new(original_relation),
@@ -2139,8 +2098,9 @@ mod tests {
             ctx,
         );
 
-        // Should return null because unknownFunction is not defined
-        assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+        // unknownFunction isn't defined, so there is nothing to compare against ""
+        // and the relation doesn't match.
+        assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
     }
 
     #[test]
@@ -3951,9 +3911,9 @@ mod tests {
             ctx.clone(),
         );
         
-        // Should transform to: has(user.credits) ? user.credits < 10 : 0 < 10 
-        // which evaluates to 0 < 10 = true
-        assert_eq!(res1, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+        // Should transform to: has(user.credits) ? user.credits < "10" : false
+        // A missing field has no value to compare, so this is false
+        assert_eq!(res1, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
 
         // Test case 2: Right side is atomic (int) - should use 0 as default for int
         let res2 = evaluate_with_context(
@@ -3969,9 +3929,9 @@ mod tests {
             ctx.clone(),
         );
         
-        // Should transform to: has(user.credits) ? user.credits < 10 : 0 < 10 
-        // which evaluates to 0 < 10 = true
-        assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+        // Should transform to: has(user.credits) ? user.credits < 10 : false
+        // A missing field has no value to compare, so this is false
+        assert_eq!(res2, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
 
         // Test case 3: Right side is atomic (float) - should use 0.0 as default
         let res3 = evaluate_with_context(
@@ -3987,8 +3947,7 @@ mod tests {
             ctx.clone(),
         );
         
-        // Should transform to: has(user.score) ? user.score > 3.5 : 0.0 > 3.5 
-        // which evaluates to 0.0 > 3.5 = false
+        // Should transform to: has(user.score) ? user.score > 3.5 : false
         assert_eq!(res3, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
 
         // Test case 4: Right side is atomic (bool) - should use false as default
@@ -4005,8 +3964,7 @@ mod tests {
             ctx.clone(),
         );
         
-        // Should transform to: has(user.active) ? user.active == true : false == true 
-        // which evaluates to false == true = false
+        // Should transform to: has(user.active) ? user.active == true : false
         assert_eq!(res4, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
 
         // Test case 5: Right side is NOT atomic (property access) - should wrap whole expression
@@ -4138,6 +4096,112 @@ mod tests {
         // Which evaluates to: false ? ... : false == true = false
         assert_eq!(res4, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
     }
+
+    /// An entitlement carrying only the fields a Purchase Controller can fill in.
+    /// `willRenew` is absent, not false.
+    fn bare_entitlement_context(extra_fields: &str) -> String {
+        format!(
+            r#"
+        {{
+            "variables": {{"map": {{"device": {{"type": "map", "value": {{
+                "customerInfo": {{"type": "map", "value": {{
+                    "entitlements": {{"type": "list", "value": [
+                        {{"type": "map", "value": {{
+                            "identifier": {{"type": "string", "value": "unlimited_access"}},
+                            "isActive": {{"type": "bool", "value": true}}{}
+                        }}}}
+                    ]}}
+                }}}}
+            }}}}}}}},
+            "expression": "has(device.customerInfo) && device.customerInfo.entitlements.exists(e, e.isActive == true && e.willRenew == false)",
+            "device": {{}},
+            "computed": {{}}
+        }}
+        "#,
+            extra_fields
+        )
+    }
+
+    #[test]
+    fn test_missing_bool_field_does_not_equal_false() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+
+        // A bare active entitlement must not match "will not renew" - renewal state
+        // is unknown, not false.
+        let bare = evaluate_with_context(bare_entitlement_context(""), ctx.clone());
+        assert_eq!(bare, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+
+        // An explicit false still matches.
+        let explicit_false = evaluate_with_context(
+            bare_entitlement_context(r#", "willRenew": {"type": "bool", "value": false}"#),
+            ctx.clone(),
+        );
+        assert_eq!(explicit_false, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+
+        // An explicit true does not.
+        let explicit_true = evaluate_with_context(
+            bare_entitlement_context(r#", "willRenew": {"type": "bool", "value": true}"#),
+            ctx.clone(),
+        );
+        assert_eq!(explicit_true, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}");
+    }
+
+    #[test]
+    fn test_missing_fields_do_not_equal_type_defaults() {
+        let ctx = Arc::new(TestContext {
+            map: HashMap::new(),
+        });
+
+        let cases = [
+            "user.active == false",
+            "user.active != false",
+            "user.credits == 0",
+            "user.credits < 10",
+            "user.credits >= 0",
+            "user.name == \\\"\\\"",
+            "user.name != \\\"\\\"",
+        ];
+
+        for expression in cases {
+            let res = evaluate_with_context(
+                format!(
+                    r#"
+        {{
+            "variables": {{"map": {{"user": {{"type": "map", "value": {{}}}}}}}},
+            "expression": "{}",
+            "device": {{}},
+            "computed": {{}}
+        }}
+        "#,
+                    expression
+                ),
+                ctx.clone(),
+            );
+            assert_eq!(
+                res, "{\"Ok\":{\"type\":\"bool\",\"value\":false}}",
+                "missing field should not match `{}`",
+                expression
+            );
+        }
+
+        // Comparing against null still reports the field as missing.
+        let res = evaluate_with_context(
+            r#"
+        {
+            "variables": {"map": {"user": {"type": "map", "value": {}}}},
+            "expression": "user.active == null",
+            "device": {},
+            "computed": {}
+        }
+        "#
+            .to_string(),
+            ctx.clone(),
+        );
+        assert_eq!(res, "{\"Ok\":{\"type\":\"bool\",\"value\":true}}");
+    }
+
 }
 
 #[cfg(test)]

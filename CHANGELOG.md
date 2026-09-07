@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 1.0.16
+
+### Fixes
+
+- A field that isn't in the data no longer compares equal to `false`, `0` or `""`. Comparisons against a missing field now simply don't match, so an entitlement that never reported `willRenew` stops matching `willRenew == false`. The same applies to a device or computed function the host doesn't expose. Checking `field == null` still reports a missing field as missing.
+
 ## 1.0.15
 
 ### Fixes

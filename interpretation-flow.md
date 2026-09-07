@@ -129,30 +129,23 @@ And(
 )
 ```
 
-#### 3c. Type-Aware Null Safety for Relations
+#### 3c. Missing Values in Relations
 
-Enhanced transformations for relation expressions (comparisons) that involve `has()` or `hasFn()` wrapped expressions. These transformations provide type-appropriate default values instead of `null` to avoid comparison errors.
+A relation whose left side is a property access or a device/computed function call is wrapped as a whole, so a value that isn't there simply doesn't match.
 
-##### Property Access Relations with Type-Aware Defaults
-
-When a property access appears in a relation with an atomic right-hand side, the transformation uses type-appropriate defaults:
+##### Property Access Relations
 
 **Original:**
 ```
 user.credits < 10
 ```
 
-**Transformed (when user.credits doesn't exist):**
+**Transformed:**
 ```
-has(user.credits) ? user.credits < 10 : 0 < 10
+has(user.credits) ? user.credits < 10 : false
 ```
 
-**Type-specific defaults:**
-- `Int`/`UInt`/`Float` → `0`/`0.0`
-- `String` → `""`
-- `Bool` → `false`
-
-For non-atomic right-hand sides, the entire relation is wrapped:
+The same shape is used whatever the right side is:
 
 **Original:**
 ```
@@ -164,45 +157,49 @@ user.credits < device.limit
 has(user.credits) ? user.credits < device.limit : false
 ```
 
-##### Function Call Relations with Type-Aware Defaults
+A missing field is unknown, not a zero value. It is never filled in with `0`, `""` or `false`, because that would make `user.active == false` match a user whose `active` flag was never reported.
 
-When a device/computed function call appears in a relation, similar type-aware logic applies:
+##### Comparing Against `null`
+
+Comparing against the literal `null` is how an expression asks whether a field is there, so those relations resolve the missing side to `null` instead of dropping out to `false`:
+
+**Original:**
+```
+user.credits == null
+```
+
+**Transformed:**
+```
+(has(user.credits) ? user.credits : null) == null
+```
+
+##### Function Call Relations
+
+A device or computed function the host doesn't expose is treated the same way:
 
 **Original:**
 ```
 device.getDays() > 5
 ```
 
-**Transformed (when getDays function doesn't exist):**
+**Transformed:**
 ```
-hasFn("device.getDays") ? device.getDays() > 5 : 0 > 5
+hasFn("device.getDays") ? device.getDays() > 5 : false
 ```
 
 **Original:**
 ```
-device.getString() == "hello"  
-```
-
-**Transformed (when getString function doesn't exist):**
-```
-hasFn("device.getString") ? device.getString() == "hello" : "" == "hello"
-```
-
-For non-atomic comparisons, the whole relation is wrapped:
-
-**Original:**
-```
-device.getLimit() > user.credits
+device.getDays() == null
 ```
 
 **Transformed:**
 ```
-hasFn("device.getLimit") ? device.getLimit() > user.credits : false
+(hasFn("device.getDays") ? device.getDays() : null) == null
 ```
 
 **Benefits:**
 - Eliminates `null` comparison errors
-- Provides predictable, type-safe default behavior
+- A missing value never matches by accident
 - Maintains consistent evaluation semantics across different scenarios
 
 ### Step 4: Context Setup
@@ -263,37 +260,43 @@ The `execute_with` function (src/lib.rs:180) sets up the Superscript evaluation 
 
 3. **Final result:** `Bool(true) && Bool(true)` → `Bool(true)`
 
-### Enhanced Type-Safe Evaluation Examples
-
-The type-aware transformations provide more predictable behavior for missing properties and functions:
+### Missing Value Evaluation Examples
 
 **Example 1: Missing property with atomic comparison**
 ```
 Expression: user.credits < 10
 Variables: {"map": {"user": {"type": "map", "value": {}}}}  // credits missing
-Transformation: has(user.credits) ? user.credits < 10 : 0 < 10
-Result: false ? ... : 0 < 10 = true
+Transformation: has(user.credits) ? user.credits < 10 : false
+Result: false ? ... : false = false
 ```
 
 **Example 2: Missing function with atomic comparison**
 ```
-Expression: device.getDays() > 5  
+Expression: device.getDays() > 5
 Device functions: {"knownFunc": []}  // getDays missing
-Transformation: hasFn("device.getDays") ? device.getDays() > 5 : 0 > 5
-Result: false ? ... : 0 > 5 = false
+Transformation: hasFn("device.getDays") ? device.getDays() > 5 : false
+Result: false ? ... : false = false
 ```
 
-**Example 3: Missing function with string comparison**
+**Example 3: Missing boolean property**
 ```
-Expression: device.getName() == "test"
-Device functions: {}  // getName missing
-Transformation: hasFn("device.getName") ? device.getName() == "test" : "" == "test"  
-Result: false ? ... : "" == "test" = false
+Expression: entitlement.willRenew == false
+Variables: entitlement has no willRenew key
+Transformation: has(entitlement.willRenew) ? entitlement.willRenew == false : false
+Result: false ? ... : false = false
 ```
 
-**Benefits over previous behavior:**
+**Example 4: Asking whether a property is there**
+```
+Expression: user.credits == null
+Variables: {"map": {"user": {"type": "map", "value": {}}}}  // credits missing
+Transformation: (has(user.credits) ? user.credits : null) == null
+Result: null == null = true
+```
+
+**Benefits:**
 - No `null` comparison errors that would result in evaluation failures
-- Consistent, predictable results based on data types
+- A value that isn't there never matches by accident
 - Graceful degradation when properties/functions are unavailable
 
 ## Key Components
