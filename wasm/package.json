@@ -1,6 +1,6 @@
 {
   "name": "@superwall/superscript",
-  "version": "1.0.2",
+  "version": "1.0.16",
   "type": "module",
   "main": "./dist/cjs/node.js",
   "module": "./dist/esm/node.js",
@@ -25,11 +25,13 @@
     "clean": "rm -rf target dist",
     "build:wasm:node": "wasm-pack build --target nodejs --out-dir ./target/node",
     "build:wasm:browser": "wasm-pack build --target bundler --out-dir ./target/browser",
+    "build:wasm:web": "wasm-pack build --target web --out-dir ./target/web && bun run generate:inline",
+    "generate:inline": "bun scripts/inline-wasm.ts",
     "build:ts:esm": "tsc --outDir ./dist/esm --module ES2020",
     "build:ts:cjs": "tsc --outDir ./dist/cjs --module CommonJS",
     "build:ts": "npm run build:ts:esm && npm run build:ts:cjs",
-    "copy:wasm": "mkdir -p dist/target/node dist/target/browser && cp -r target/node/* dist/target/node/ && cp -r target/browser/* dist/target/browser/",
-    "build": "npm run clean && npm run build:wasm:node && npm run build:wasm:browser && npm run build:ts && npm run copy:wasm",
+    "copy:wasm": "mkdir -p dist/target/node dist/target/browser dist/target/web && cp -r target/node/* dist/target/node/ && cp -r target/browser/* dist/target/browser/ && cp -r target/web/* dist/target/web/",
+    "build": "npm run clean && npm run build:wasm:node && npm run build:wasm:browser && npm run build:wasm:web && npm run build:ts && npm run copy:wasm",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {

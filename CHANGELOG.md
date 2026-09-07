@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.0.16
+
+npm-only release (`@superwall/superscript`). Also aligns the npm package version — previously lagging at 1.0.3 — with the repo versioning.
+
+### Fixes
+
+- Fixes the `/browser` entry throwing `wasm.__wbindgen_start is not a function` at load time in bundlers without WebAssembly ESM integration (Bun, esbuild, default Next.js). The entry now tries the existing wasm-pack `--target bundler` output first and, if that import fails, falls back to a new `--target web` build initialised from base64-inlined wasm bytes — no bundler wasm/asset support required. The fallback lives in a separate lazily-loaded chunk, so webpack (`asyncWebAssembly`) and vite-plugin-wasm consumers are unaffected.
+- Removes noisy `console.log` calls from the browser host-context property callbacks.
+
 ## 1.0.15
 
 ### Fixes
