@@ -6,6 +6,8 @@
 
 - A field that isn't in the data no longer compares equal to `false`, `0` or `""`. Comparisons against a missing field now simply don't match, so an entitlement that never reported `willRenew` stops matching `willRenew == false`. The same applies to a device or computed function the host doesn't expose. Checking `field == null` still reports a missing field as missing.
 
+  This changes the result of any comparison that leaned on the old fill-in. `user.credits < 10` used to match a user with no `credits`, and `user.plan != "pro"` used to match a user who never reported a plan; neither matches now. To keep the old behavior for a rule, say so explicitly: `!has(user.credits) || user.credits < 10`. Note that `maybe()` is not a substitute - it only falls back when the left side fails to evaluate, and a missing field evaluates fine, to `null`.
+
 ## 1.0.15
 
 ### Fixes

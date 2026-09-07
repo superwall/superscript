@@ -4162,6 +4162,8 @@ mod tests {
             "user.credits >= 0",
             "user.name == \\\"\\\"",
             "user.name != \\\"\\\"",
+            "user.credits != 10",
+            "user.name != \\\"pro\\\"",
         ];
 
         for expression in cases {

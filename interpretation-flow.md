@@ -145,7 +145,7 @@ user.credits < 10
 has(user.credits) ? user.credits < 10 : false
 ```
 
-The same shape is used whatever the right side is:
+The same shape is used whatever the right side is, with one exception covered below:
 
 **Original:**
 ```
@@ -186,6 +186,8 @@ device.getDays() > 5
 ```
 hasFn("device.getDays") ? device.getDays() > 5 : false
 ```
+
+Comparing against `null` works the same way here, asking whether the host exposes the function at all:
 
 **Original:**
 ```
@@ -322,8 +324,8 @@ Result: null == null = true
 - **`transform_expression_for_null_safety`** (src/lib.rs:654): Applies three types of safety transformations:
   - **Property access**: Wraps with `has()` checks to prevent `UndeclaredReference` errors
   - **Function calls**: Wraps device/computed function calls with `hasFn()` checks using the host-exposed function lists
-  - **Type-aware relations**: Enhances relation expressions containing `has()` or `hasFn()` wrapped expressions with type-appropriate default values instead of `null` or generic `false` returns
-  - Eliminates comparison errors by providing sensible defaults based on the right-hand side type (e.g., `0` for numbers, `""` for strings, `false` for booleans)
+  - **Relations**: Wraps a relation on a property access or an unexposed device/computed function as a whole, so a value that isn't there yields `false` and the comparison doesn't match
+  - Eliminates comparison errors without inventing a value: a missing field is never filled in with `0`, `""` or `false`. Comparing against the literal `null` is the exception - those relations resolve the missing side to `null` so `field == null` still answers "is this field present?"
 
 ### Property Resolution
 
