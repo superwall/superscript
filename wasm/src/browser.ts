@@ -25,8 +25,9 @@ const RETRY_COOLDOWN_MS = 10_000;
 
 /** Decoded inline wasm bytes, cached independently of whether
  *  `glue.default(...)` then succeeds — a retry must not redo `atob` over
- *  the ~1.5 M-char blob. */
-let inlineWasmBytes: Uint8Array | null = null;
+ *  the ~1.5 M-char blob. Dropped after a successful init: the overall
+ *  load is then memoized in `wasmModulePromise` and this path is never
+ *  re-entered. */
 let inlineWasmBytesPromise: Promise<Uint8Array> | null = null;
 
 /**
@@ -37,6 +38,25 @@ let inlineWasmBytesPromise: Promise<Uint8Array> | null = null;
  */
 async function loadBundlerModule(): Promise<WasmExports> {
     return await import('../target/browser/superscript.js');
+}
+
+/**
+ * Decode the base64-inlined wasm once. Cached on the promise so a retry
+ * after a failed `glue.default` does not redo `atob`; the cache is
+ * dropped after a successful init.
+ */
+function loadInlineWasmBytes(): Promise<Uint8Array> {
+    inlineWasmBytesPromise ??= import('../target/web/superscript_bg_inline.js')
+        .then((inline) =>
+            Uint8Array.from(atob(inline.wasmBase64), (c) => c.charCodeAt(0)),
+        )
+        .catch((error) => {
+            // Don't cache a failed import (missing/mangled chunk) —
+            // a later retry after cooldown should try again.
+            inlineWasmBytesPromise = null;
+            throw error;
+        });
+    return inlineWasmBytesPromise;
 }
 
 /**
@@ -53,30 +73,15 @@ async function loadBundlerModule(): Promise<WasmExports> {
  * inline chunk in a separate lazily-loaded chunk that is never fetched on
  * the happy path.
  */
-function loadInlineWasmBytes(): Promise<Uint8Array> {
-    if (inlineWasmBytes) return Promise.resolve(inlineWasmBytes);
-    inlineWasmBytesPromise ??= import('../target/web/superscript_bg_inline.js')
-        .then((inline) => {
-            inlineWasmBytes = Uint8Array.from(atob(inline.wasmBase64), (c) =>
-                c.charCodeAt(0)
-            );
-            return inlineWasmBytes;
-        })
-        .catch((error) => {
-            // Don't cache a failed import (missing/mangled chunk) as
-            // bytes — a later retry after cooldown should try again.
-            inlineWasmBytesPromise = null;
-            throw error;
-        });
-    return inlineWasmBytesPromise;
-}
-
 async function loadInlineModule(): Promise<WasmExports> {
     const [glue, binary] = await Promise.all([
         import('../target/web/superscript.js'),
         loadInlineWasmBytes(),
     ]);
     await glue.default({ module_or_path: binary });
+    // Init succeeded, so the overall load is memoized and this path is
+    // never re-entered — drop the ~1.15 MB decode cache.
+    inlineWasmBytesPromise = null;
     return glue as unknown as WasmExports;
 }
 
