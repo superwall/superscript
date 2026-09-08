@@ -12,7 +12,7 @@ Default esbuild and Next.js webpack still fail **at build time** on the `.wasm` 
 
 ## Optional CDN fallback
 
-The browser entry does **not** fetch wasm from the network unless you opt in **before** the first `evaluateWithContext` call:
+The browser entry does **not** fetch wasm from the network unless you opt in before a **load attempt**. The flags are re-read at the start of each attempt (including the post-cooldown retry after a total miss), so setting them from an error handler still takes effect. After a successful load they are not read again.
 
 ```js
 // Exact-version file on jsDelivr (must match this package's version).
@@ -29,8 +29,12 @@ CSP: allow the origin you actually fetch in `connect-src` (for the default, `htt
 
 ## Setup
 
-First, import the module:
-`import * as wasm from "@superwall/superscript";`
+First, import the matching entry:
+
+```ts
+import { evaluateWithContext } from "@superwall/superscript/browser";
+// Node/Bun: import { evaluateWithContext } from "@superwall/superscript/node";
+```
 
 Next, create a WasmHostContext class to allow the expression evaluator to call the host environment (your JS)
 and compute the dynamic properties, i.e. `platform.daysSinceEvent("event_name")`.
@@ -81,8 +85,8 @@ class TestHostContext implements SuperscriptHostContext {
 ```
 
 
-Then create an instance of the `WasmHostContext` and provide it together with the arguments to
-`wasm.evaluateWithContext(arguments, wasmHostContext)`.
+Then create an instance of the host context and pass it with the arguments to
+`evaluateWithContext(input, hostContext)`.
 
 ```javascript
 async function main() {

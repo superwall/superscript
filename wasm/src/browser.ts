@@ -12,9 +12,11 @@ type CdnGlobals = {
 };
 
 /** Opt-in CDN wasm URL. `SUPERWALL_SUPERSCRIPT_WASM_URL` (self-hosted) wins
- *  over `SUPERWALL_SUPERSCRIPT_WASM_CDN === true` (pinned jsDelivr). Both
- *  must be set on `globalThis` before the first `evaluateWithContext`.
- *  Returns null when neither is set — the CDN path is then skipped. */
+ *  over `SUPERWALL_SUPERSCRIPT_WASM_CDN === true` (pinned jsDelivr). Read at
+ *  the start of each load attempt (including the post-cooldown retry after
+ *  a total miss); a late opt-in from an error handler still takes effect.
+ *  After a successful load they are not read again. Returns null when
+ *  neither is set — the CDN path is then skipped. */
 function cdnWasmUrl(): string | null {
     const g = globalThis as CdnGlobals;
     if (typeof g.SUPERWALL_SUPERSCRIPT_WASM_URL === 'string' && g.SUPERWALL_SUPERSCRIPT_WASM_URL.length > 0) {
@@ -130,10 +132,15 @@ async function tryLoadPaths(): Promise<WasmExports> {
             failures.push({ path, error });
         }
     }
+    const detail = failures
+        .map((f) => `${f.path}: ${String(f.error)}`)
+        .join('; ');
+    const hint =
+        cdnUrl === null
+            ? '; set globalThis.SUPERWALL_SUPERSCRIPT_WASM_CDN = true or SUPERWALL_SUPERSCRIPT_WASM_URL before the next load attempt for a network fallback'
+            : '';
     const error = new Error(
-        `superscript: all wasm load paths failed — ${failures
-            .map((f) => `${f.path}: ${String(f.error)}`)
-            .join('; ')}`
+        `superscript: all wasm load paths failed — ${detail}${hint}`
     );
     (error as Error & { failures: unknown }).failures = failures;
     throw error;
