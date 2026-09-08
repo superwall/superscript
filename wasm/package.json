@@ -31,9 +31,9 @@
     "test:browser-loader": "bun scripts/test-browser-loader.ts",
     "build:ts:esm": "tsc --outDir ./dist/esm --module ES2020",
     "build:ts:cjs": "tsc --outDir ./dist/cjs --module CommonJS",
-    "build:ts": "npm run build:ts:esm && npm run build:ts:cjs",
+    "build:ts": "npm run generate:version && npm run build:ts:esm && npm run build:ts:cjs",
     "copy:wasm": "mkdir -p dist/target/node dist/target/browser dist/target/web && cp -r target/node/* dist/target/node/ && cp -r target/browser/* dist/target/browser/ && cp -r target/web/* dist/target/web/",
-    "build": "npm run clean && npm run build:wasm:node && npm run build:wasm:browser && npm run build:wasm:web && npm run generate:version && npm run build:ts && npm run copy:wasm && npm run test:browser-loader",
+    "build": "npm run clean && npm run build:wasm:node && npm run build:wasm:browser && npm run build:wasm:web && npm run build:ts && npm run copy:wasm && npm run test:browser-loader",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {

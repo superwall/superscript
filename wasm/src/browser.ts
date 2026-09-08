@@ -197,3 +197,5 @@ export type {
     ExecutionContext,
     ValueType,
 } from './types';
+
+export { cdnWasmUrl };

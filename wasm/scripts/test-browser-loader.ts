@@ -1,7 +1,8 @@
 // Post-build check for the /browser fallback surface. No bundler involved:
 // atob-decode the inline module, init the web-target glue, evaluate one
 // known expression. Also asserts the generated VERSION matches package.json
-// and that the jsDelivr URL shape is what browser.ts will request.
+// and that `cdnWasmUrl()` in browser.ts produces the jsDelivr URL (or null
+// when the consumer has not opted in).
 
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -24,11 +25,32 @@ if (VERSION !== pkg.version) {
     );
 }
 
-const cdnUrl = `https://cdn.jsdelivr.net/npm/${pkg.name}@${VERSION}/dist/target/web/superscript_bg.wasm`;
-const expected = `https://cdn.jsdelivr.net/npm/@superwall/superscript@${pkg.version}/dist/target/web/superscript_bg.wasm`;
-if (cdnUrl !== expected) {
-    throw new Error(`CDN URL shape mismatch: ${cdnUrl} != ${expected}`);
+const g = globalThis as {
+    SUPERWALL_SUPERSCRIPT_WASM_CDN?: boolean;
+    SUPERWALL_SUPERSCRIPT_WASM_URL?: string;
+};
+const { cdnWasmUrl } = (await import(fileUrl('dist/esm/browser.js'))) as {
+    cdnWasmUrl: () => string | null;
+};
+
+delete g.SUPERWALL_SUPERSCRIPT_WASM_CDN;
+delete g.SUPERWALL_SUPERSCRIPT_WASM_URL;
+if (cdnWasmUrl() !== null) {
+    throw new Error(`cdnWasmUrl() must be null when neither opt-in flag is set; got ${cdnWasmUrl()}`);
 }
+
+g.SUPERWALL_SUPERSCRIPT_WASM_CDN = true;
+const jsdelivr = `https://cdn.jsdelivr.net/npm/${pkg.name}@${pkg.version}/dist/target/web/superscript_bg.wasm`;
+if (cdnWasmUrl() !== jsdelivr) {
+    throw new Error(`cdnWasmUrl() with CDN flag: ${cdnWasmUrl()} != ${jsdelivr}`);
+}
+
+g.SUPERWALL_SUPERSCRIPT_WASM_URL = 'https://example.test/superscript_bg.wasm';
+if (cdnWasmUrl() !== 'https://example.test/superscript_bg.wasm') {
+    throw new Error(`cdnWasmUrl() URL override lost to CDN flag: ${cdnWasmUrl()}`);
+}
+delete g.SUPERWALL_SUPERSCRIPT_WASM_CDN;
+delete g.SUPERWALL_SUPERSCRIPT_WASM_URL;
 
 const glue = (await import(fileUrl('dist/target/web/superscript.js'))) as {
     default: (init: { module_or_path: BufferSource }) => Promise<unknown>;
