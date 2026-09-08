@@ -3,6 +3,30 @@
 This is the JS (WASM) runner for [Superscript expression language](https://github.com/superwall/Superscript).
 The evaluator can call host environment functions and compute dynamic properties while evaluating expressions.
 
+## Entries
+
+- `@superwall/superscript/node` — Node/Bun. Loads wasm via `fs`.
+- `@superwall/superscript/browser` — browsers. Tries wasm-pack `--target bundler` first (`import` of the `.wasm` file). If that throws at runtime (Bun, esbuild with `--loader:.wasm=file`), it falls back to a `--target web` build initialised from base64-inlined bytes, with no network.
+
+Default esbuild and Next.js webpack still fail **at build time** on the `.wasm` import. Those need `--loader:.wasm=file` or `experiments.asyncWebAssembly: true`.
+
+## Optional CDN fallback
+
+The browser entry does **not** fetch wasm from the network unless you opt in **before** the first `evaluateWithContext` call:
+
+```js
+// Exact-version file on jsDelivr (must match this package's version).
+globalThis.SUPERWALL_SUPERSCRIPT_WASM_CDN = true;
+
+// Or a self-hosted copy. Wins if both are set.
+globalThis.SUPERWALL_SUPERSCRIPT_WASM_URL =
+  "https://your.cdn.example/superscript_bg.wasm";
+```
+
+jsDelivr URL shape: `https://cdn.jsdelivr.net/npm/@superwall/superscript@<version>/dist/target/web/superscript_bg.wasm`.
+
+CSP: allow the origin you actually fetch in `connect-src` (for the default, `https://cdn.jsdelivr.net`). Setting neither flag issues no request and needs no CSP change.
+
 ## Setup
 
 First, import the module:

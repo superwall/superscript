@@ -6,15 +6,24 @@ interface WasmExports {
     evaluate_with_context(input: string, context: unknown): Promise<string>;
 }
 
-/** Exact-version wasm binary on jsDelivr (mirrors the published npm dist/).
- *  Must match the local glue module, hence the pinned VERSION rather than a
- *  range. Override with `globalThis.SUPERWALL_SUPERSCRIPT_WASM_URL` to point
- *  at a self-hosted copy (CSP, air-gapped, tests). */
-function cdnWasmUrl(): string {
-    const override = (globalThis as { SUPERWALL_SUPERSCRIPT_WASM_URL?: unknown })
-        .SUPERWALL_SUPERSCRIPT_WASM_URL;
-    if (typeof override === 'string' && override.length > 0) return override;
-    return `https://cdn.jsdelivr.net/npm/@superwall/superscript@${VERSION}/dist/target/web/superscript_bg.wasm`;
+type CdnGlobals = {
+    SUPERWALL_SUPERSCRIPT_WASM_URL?: unknown;
+    SUPERWALL_SUPERSCRIPT_WASM_CDN?: unknown;
+};
+
+/** Opt-in CDN wasm URL. `SUPERWALL_SUPERSCRIPT_WASM_URL` (self-hosted) wins
+ *  over `SUPERWALL_SUPERSCRIPT_WASM_CDN === true` (pinned jsDelivr). Both
+ *  must be set on `globalThis` before the first `evaluateWithContext`.
+ *  Returns null when neither is set — the CDN path is then skipped. */
+function cdnWasmUrl(): string | null {
+    const g = globalThis as CdnGlobals;
+    if (typeof g.SUPERWALL_SUPERSCRIPT_WASM_URL === 'string' && g.SUPERWALL_SUPERSCRIPT_WASM_URL.length > 0) {
+        return g.SUPERWALL_SUPERSCRIPT_WASM_URL;
+    }
+    if (g.SUPERWALL_SUPERSCRIPT_WASM_CDN === true) {
+        return `https://cdn.jsdelivr.net/npm/@superwall/superscript@${VERSION}/dist/target/web/superscript_bg.wasm`;
+    }
+    return null;
 }
 
 let wasmModulePromise: Promise<WasmExports> | null = null;
@@ -86,17 +95,16 @@ async function loadInlineModule(): Promise<WasmExports> {
 }
 
 /**
- * Last-resort path: fetch the exact-version wasm binary from jsDelivr and
- * initialise the local `--target web` glue with it. Independent of any
- * bundler `.wasm`/asset handling (only the small plain-JS glue module has to
- * survive bundling), but requires network access and a CSP allowing
- * jsDelivr in `connect-src`.
+ * Opt-in last-resort path: fetch wasm bytes from a URL and initialise the
+ * local `--target web` glue with them. Only registered when the consumer
+ * set `SUPERWALL_SUPERSCRIPT_WASM_CDN` or `SUPERWALL_SUPERSCRIPT_WASM_URL`
+ * before the first eval — see wasm/README.md.
  */
-async function loadCdnModule(): Promise<WasmExports> {
+async function loadCdnModule(url: string): Promise<WasmExports> {
     const glue = await import('../target/web/superscript.js');
     // Pass the URL string — wasm-bindgen's web-target init fetches it.
     // (`fetch()` here would skip MIME/streaming checks the glue already does.)
-    await glue.default({ module_or_path: cdnWasmUrl() });
+    await glue.default({ module_or_path: url });
     return glue as unknown as WasmExports;
 }
 
@@ -107,11 +115,15 @@ async function loadCdnModule(): Promise<WasmExports> {
  */
 async function tryLoadPaths(): Promise<WasmExports> {
     const failures: { path: string; error: unknown }[] = [];
-    for (const [path, load] of [
+    const paths: [string, () => Promise<WasmExports>][] = [
         ['bundler target', loadBundlerModule],
         ['inline web target', loadInlineModule],
-        ['cdn web target', loadCdnModule],
-    ] as const) {
+    ];
+    const cdnUrl = cdnWasmUrl();
+    if (cdnUrl !== null) {
+        paths.push(['cdn web target', () => loadCdnModule(cdnUrl)]);
+    }
+    for (const [path, load] of paths) {
         try {
             return await load();
         } catch (error) {
