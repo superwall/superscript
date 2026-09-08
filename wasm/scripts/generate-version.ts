@@ -1,7 +1,7 @@
 // Regenerates `src/version.ts` from package.json so the CDN fallback in
 // browser.ts pins the exact published version. Runs as part of `build`
-// (before `build:ts`); the generated file is committed so editors and
-// standalone `tsc` runs work without a build step.
+// (before `build:ts`). The file is gitignored — committing it made every
+// `npm run build` on a version-bumped branch leave a dirty working tree.
 
 import { join } from 'node:path';
 
