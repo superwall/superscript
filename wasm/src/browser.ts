@@ -19,10 +19,13 @@ async function loadBundlerModule(): Promise<WasmExports> {
 
 /**
  * Fallback path: wasm-pack `--target web` output initialised from
- * base64-inlined wasm bytes. Needs no bundler wasm/asset support at all, so
- * it works under Bun, esbuild, and any bundler that treats `.wasm` imports
- * as plain file assets (where the bundler path throws
- * "wasm.__wbindgen_start is not a function" at import time).
+ * base64-inlined wasm bytes. Covers bundlers that resolve `.wasm` imports as
+ * plain file assets — Bun out of the box, esbuild with `--loader:.wasm=file`
+ * — where the bundler path throws "wasm.__wbindgen_start is not a function"
+ * at import time. Bundlers with no `.wasm` handling at all (default esbuild,
+ * Next.js' default webpack config) still fail at *build* time before either
+ * path can run; those need `--loader:.wasm=file` resp.
+ * `experiments.asyncWebAssembly: true` in the consumer config.
  *
  * Both modules are behind dynamic imports, so wasm-capable bundlers put the
  * inline chunk in a separate lazily-loaded chunk that is never fetched on
@@ -41,7 +44,27 @@ async function loadInlineModule(): Promise<WasmExports> {
 }
 
 function loadWasmModule(): Promise<WasmExports> {
-    wasmModulePromise ??= loadBundlerModule().catch(() => loadInlineModule());
+    // Keep both failure causes: the memoized rejection is all future callers
+    // ever see, and bundler wasm handling fails in enough surprising ways
+    // that losing the primary error would make field reports undiagnosable.
+    wasmModulePromise ??= loadBundlerModule().catch((bundlerError) =>
+        loadInlineModule().catch((inlineError) => {
+            const error = new Error(
+                `superscript: both wasm load paths failed — bundler target: ${String(
+                    bundlerError
+                )}; inline web target: ${String(inlineError)}`
+            );
+            (error as Error & {
+                bundlerError: unknown;
+                inlineError: unknown;
+            }).bundlerError = bundlerError;
+            (error as Error & {
+                bundlerError: unknown;
+                inlineError: unknown;
+            }).inlineError = inlineError;
+            throw error;
+        })
+    );
     return wasmModulePromise;
 }
 

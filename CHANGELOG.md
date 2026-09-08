@@ -6,7 +6,7 @@ npm-only release (`@superwall/superscript`). Also aligns the npm package version
 
 ### Fixes
 
-- Fixes the `/browser` entry throwing `wasm.__wbindgen_start is not a function` at load time in bundlers without WebAssembly ESM integration (Bun, esbuild, default Next.js). The entry now tries the existing wasm-pack `--target bundler` output first and, if that import fails, falls back to a new `--target web` build initialised from base64-inlined wasm bytes — no bundler wasm/asset support required. The fallback lives in a separate lazily-loaded chunk, so webpack (`asyncWebAssembly`) and vite-plugin-wasm consumers are unaffected.
+- Fixes the `/browser` entry throwing `wasm.__wbindgen_start is not a function` at load time in bundlers that resolve `.wasm` imports as plain file assets instead of wasm modules — Bun out of the box, esbuild when configured with `--loader:.wasm=file`. The entry now tries the existing wasm-pack `--target bundler` output first and, if that import fails, falls back to a new `--target web` build initialised from base64-inlined wasm bytes. The fallback lives in a separate lazily-loaded chunk, so webpack (`asyncWebAssembly`) and vite-plugin-wasm consumers are unaffected. Note: bundlers with no `.wasm` handling at all (esbuild without the loader flag, Next.js' default webpack config) fail at build time before either path can run — unchanged from previous releases; they require `--loader:.wasm=file` resp. `experiments.asyncWebAssembly: true`.
 - Removes noisy `console.log` calls from the browser host-context property callbacks.
 
 ## 1.0.15
