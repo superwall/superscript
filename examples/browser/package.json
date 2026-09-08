@@ -16,7 +16,6 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-split": "^2.0.14",
-    "superscript": "../../wasm/target/browser",
     "superscript": "../../wasm/target/browser"
   },
   "devDependencies": {

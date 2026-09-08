@@ -12,7 +12,6 @@
         "react-dom": "^19.0.0",
         "react-split": "^2.0.14",
         "superscript": "../../wasm/target/browser",
-        "superscript": "../../wasm/target/browser",
       },
       "devDependencies": {
         "@types/react": "^19.0.10",
@@ -445,8 +444,6 @@
     "split.js": ["split.js@1.6.5", "", {}, "sha512-mPTnGCiS/RiuTNsVhCm9De9cCAUsrNFFviRbADdKiiV+Kk8HKp/0fWu7Kr8pi3/yBmsqLFHuXGT9UUZ+CNLwFw=="],
 
     "state-local": ["state-local@1.0.7", "", {}, "sha512-HTEHMNieakEnoe33shBYcZ7NX83ACUjCu8c40iOGEZsngj9zRnkqS9j1pqQPXwobB0ZcVTk27REb7COQ0UR59w=="],
-
-    "superscript": ["superscript@file:../../wasm/target/browser", {}],
 
     "superscript": ["superscript@file:../../wasm/target/browser", {}],
 
