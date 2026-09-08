@@ -1,8 +1,20 @@
 import type { SuperscriptHostContext, ExecutionContext } from './types';
+import { VERSION } from './version';
 
 /** Minimal shape of the wasm-bindgen glue module we call into. */
 interface WasmExports {
     evaluate_with_context(input: string, context: unknown): Promise<string>;
+}
+
+/** Exact-version wasm binary on jsDelivr (mirrors the published npm dist/).
+ *  Must match the local glue module, hence the pinned VERSION rather than a
+ *  range. Override with `globalThis.SUPERWALL_SUPERSCRIPT_WASM_URL` to point
+ *  at a self-hosted copy (CSP, air-gapped, tests). */
+function cdnWasmUrl(): string {
+    const override = (globalThis as { SUPERWALL_SUPERSCRIPT_WASM_URL?: unknown })
+        .SUPERWALL_SUPERSCRIPT_WASM_URL;
+    if (typeof override === 'string' && override.length > 0) return override;
+    return `https://cdn.jsdelivr.net/npm/@superwall/superscript@${VERSION}/dist/target/web/superscript_bg.wasm`;
 }
 
 let wasmModulePromise: Promise<WasmExports> | null = null;
@@ -43,28 +55,55 @@ async function loadInlineModule(): Promise<WasmExports> {
     return glue as unknown as WasmExports;
 }
 
-function loadWasmModule(): Promise<WasmExports> {
-    // Keep both failure causes: the memoized rejection is all future callers
-    // ever see, and bundler wasm handling fails in enough surprising ways
-    // that losing the primary error would make field reports undiagnosable.
-    wasmModulePromise ??= loadBundlerModule().catch((bundlerError) =>
-        loadInlineModule().catch((inlineError) => {
-            const error = new Error(
-                `superscript: both wasm load paths failed — bundler target: ${String(
-                    bundlerError
-                )}; inline web target: ${String(inlineError)}`
-            );
-            (error as Error & {
-                bundlerError: unknown;
-                inlineError: unknown;
-            }).bundlerError = bundlerError;
-            (error as Error & {
-                bundlerError: unknown;
-                inlineError: unknown;
-            }).inlineError = inlineError;
-            throw error;
-        })
+/**
+ * Last-resort path: fetch the exact-version wasm binary from jsDelivr and
+ * initialise the local `--target web` glue with it. Independent of any
+ * bundler `.wasm`/asset handling (only the small plain-JS glue module has to
+ * survive bundling), but requires network access and a CSP allowing
+ * jsDelivr in `connect-src`.
+ */
+async function loadCdnModule(): Promise<WasmExports> {
+    const glue = await import('../target/web/superscript.js');
+    // Pass the URL string — wasm-bindgen's web-target init fetches it.
+    // (`fetch()` here would skip MIME/streaming checks the glue already does.)
+    await glue.default({ module_or_path: cdnWasmUrl() });
+    return glue as unknown as WasmExports;
+}
+
+/**
+ * Try each load path in order. Keeps every failure cause — bundler wasm
+ * handling fails in enough surprising ways that losing the earlier errors
+ * would make field reports undiagnosable.
+ */
+async function tryLoadPaths(): Promise<WasmExports> {
+    const failures: { path: string; error: unknown }[] = [];
+    for (const [path, load] of [
+        ['bundler target', loadBundlerModule],
+        ['inline web target', loadInlineModule],
+        ['cdn web target', loadCdnModule],
+    ] as const) {
+        try {
+            return await load();
+        } catch (error) {
+            failures.push({ path, error });
+        }
+    }
+    const error = new Error(
+        `superscript: all wasm load paths failed — ${failures
+            .map((f) => `${f.path}: ${String(f.error)}`)
+            .join('; ')}`
     );
+    (error as Error & { failures: unknown }).failures = failures;
+    throw error;
+}
+
+function loadWasmModule(): Promise<WasmExports> {
+    // Memoize success only: a transient failure (e.g. offline during the CDN
+    // fetch) must not permanently poison every future evaluation.
+    wasmModulePromise ??= tryLoadPaths().catch((error) => {
+        wasmModulePromise = null;
+        throw error;
+    });
     return wasmModulePromise;
 }
 
