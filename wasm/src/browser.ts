@@ -18,6 +18,16 @@ function cdnWasmUrl(): string {
 }
 
 let wasmModulePromise: Promise<WasmExports> | null = null;
+/** Last total-failure, used to fail-fast during the cooldown instead of
+ *  re-running every path (and the CDN fetch) on each `evaluateWithContext`. */
+let lastFailure: { error: unknown; at: number } | null = null;
+const RETRY_COOLDOWN_MS = 10_000;
+
+/** Decoded inline wasm bytes, cached independently of whether
+ *  `glue.default(...)` then succeeds — a retry must not redo `atob` over
+ *  the ~1.5 M-char blob. */
+let inlineWasmBytes: Uint8Array | null = null;
+let inlineWasmBytesPromise: Promise<Uint8Array> | null = null;
 
 /**
  * Primary path: wasm-pack `--target bundler` output. It does
@@ -43,14 +53,29 @@ async function loadBundlerModule(): Promise<WasmExports> {
  * inline chunk in a separate lazily-loaded chunk that is never fetched on
  * the happy path.
  */
+function loadInlineWasmBytes(): Promise<Uint8Array> {
+    if (inlineWasmBytes) return Promise.resolve(inlineWasmBytes);
+    inlineWasmBytesPromise ??= import('../target/web/superscript_bg_inline.js')
+        .then((inline) => {
+            inlineWasmBytes = Uint8Array.from(atob(inline.wasmBase64), (c) =>
+                c.charCodeAt(0)
+            );
+            return inlineWasmBytes;
+        })
+        .catch((error) => {
+            // Don't cache a failed import (missing/mangled chunk) as
+            // bytes — a later retry after cooldown should try again.
+            inlineWasmBytesPromise = null;
+            throw error;
+        });
+    return inlineWasmBytesPromise;
+}
+
 async function loadInlineModule(): Promise<WasmExports> {
-    const [glue, inline] = await Promise.all([
+    const [glue, binary] = await Promise.all([
         import('../target/web/superscript.js'),
-        import('../target/web/superscript_bg_inline.js'),
+        loadInlineWasmBytes(),
     ]);
-    const binary = Uint8Array.from(atob(inline.wasmBase64), (c) =>
-        c.charCodeAt(0)
-    );
     await glue.default({ module_or_path: binary });
     return glue as unknown as WasmExports;
 }
@@ -98,12 +123,28 @@ async function tryLoadPaths(): Promise<WasmExports> {
 }
 
 function loadWasmModule(): Promise<WasmExports> {
-    // Memoize success only: a transient failure (e.g. offline during the CDN
-    // fetch) must not permanently poison every future evaluation.
-    wasmModulePromise ??= tryLoadPaths().catch((error) => {
-        wasmModulePromise = null;
-        throw error;
-    });
+    if (wasmModulePromise) return wasmModulePromise;
+
+    // A transient failure (offline during the CDN fetch) should be
+    // retryable, but a persistently failing environment (CSP blocking
+    // connect-src, mangled inline chunk, still-offline) must not issue a
+    // fresh ~1.15 MB fetch + full base64 decode on every evaluation.
+    // Fail fast for RETRY_COOLDOWN_MS, then allow a single new attempt.
+    if (lastFailure && Date.now() - lastFailure.at < RETRY_COOLDOWN_MS) {
+        return Promise.reject(lastFailure.error);
+    }
+
+    wasmModulePromise = tryLoadPaths().then(
+        (mod) => {
+            lastFailure = null;
+            return mod;
+        },
+        (error) => {
+            lastFailure = { error, at: Date.now() };
+            wasmModulePromise = null;
+            throw error;
+        },
+    );
     return wasmModulePromise;
 }
 
