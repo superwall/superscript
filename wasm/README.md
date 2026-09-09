@@ -32,11 +32,16 @@ CSP: allow the origin you actually fetch in `connect-src` (for the default, `htt
 First, import the matching entry:
 
 ```ts
-import { evaluateWithContext } from "@superwall/superscript/browser";
-// Node/Bun: import { evaluateWithContext } from "@superwall/superscript/node";
+import {
+    evaluateWithContext,
+    type ExecutionContext,
+    type PassableValue,
+    type WasmHostContext,
+} from "@superwall/superscript/browser";
+// Node/Bun: import { ... } from "@superwall/superscript/node";
 ```
 
-Next, create a WasmHostContext class to allow the expression evaluator to call the host environment (your JS)
+Next, create a `WasmHostContext` class to allow the expression evaluator to call the host environment (your JS)
 and compute the dynamic properties, i.e. `platform.daysSinceEvent("event_name")`.
 
 ```typescript
@@ -45,7 +50,7 @@ and compute the dynamic properties, i.e. `platform.daysSinceEvent("event_name")`
 * @param args - arguments for the function.
 * @returns a resolved value.
 * */
-class TestHostContext implements SuperscriptHostContext {
+class TestHostContext implements WasmHostContext {
     computed_property(name: string, args: [PassableValue]): PassableValue {
         console.log(`computed_property called with name: ${name}, args: ${JSON.stringify(args)}`);
         const parsedArgs = args;

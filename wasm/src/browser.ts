@@ -195,6 +195,7 @@ export async function evaluateWithContext(
 export type {
     SuperscriptHostContext as WasmHostContext,
     ExecutionContext,
+    PassableValue,
     ValueType,
 } from './types';
 
