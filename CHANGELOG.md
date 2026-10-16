@@ -2,7 +2,11 @@
 
 ## 1.0.16
 
-npm-only release (`@superwall/superscript`). Also aligns the npm package version — previously lagging at 1.0.3 — with the repo versioning.
+Released on npm (`@superwall/superscript`) and as the native iOS, macOS and Android packages. Aligns the npm package version — previously lagging at 1.0.3 — with the repo versioning.
+
+### Enhancements
+
+- The iOS package (`superscript-ios-next`) declares native macOS support for CocoaPods, and raises its minimums to iOS 15, macOS 12 and Swift 6.2 tools to match SuperwallKit. The native evaluator is unchanged from 1.0.15.
 
 ### Fixes
 
