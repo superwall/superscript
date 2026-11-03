@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.0.17
+
+The evaluator is unchanged from 1.0.16.
+
+### Fixes
+
+- The `Superscript` CocoaPod now declares native macOS support. The 1.0.16 pod on CocoaPods was published from the legacy `Superscript-iOS` repo and only declared iOS. Releases no longer update the legacy repo.
+
 ## 1.0.16
 
 Released on npm (`@superwall/superscript`) and as the native iOS, macOS and Android packages. Aligns the npm package version — previously lagging at 1.0.3 — with the repo versioning.

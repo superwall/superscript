@@ -1,6 +1,6 @@
 {
   "name": "@superwall/superscript",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "type": "module",
   "main": "./dist/cjs/node.js",
   "module": "./dist/esm/node.js",
