@@ -24,10 +24,12 @@ jobs:
         uses: actions/checkout@v3
       
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          # Trusted publishing needs Node 22.14+. No registry-url: it makes
+          # setup-node write an .npmrc with a placeholder token, which npm
+          # sends instead of using trusted publishing.
+          node-version: '22'
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
       
@@ -159,7 +161,7 @@ jobs:
       - name: Publish to NPM
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
-          # Trusted publishing needs npm 11.5.1 or later; npm 12 needs Node 22+.
+          # Trusted publishing needs npm 11.5.1 or later.
           npm install -g npm@^11.5.1
           cd wasm
           # Try a normal publish first; if it fails (e.g. first-time publish of a
