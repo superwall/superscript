@@ -1,6 +1,11 @@
 {
   "name": "@superwall/superscript",
   "version": "1.0.17",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/superwall/superscript.git",
+    "directory": "wasm"
+  },
   "type": "module",
   "main": "./dist/cjs/node.js",
   "module": "./dist/esm/node.js",

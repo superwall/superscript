@@ -8,8 +8,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  
-  packages: write  
+  contents: write
+  packages: write
+  # Lets npm trusted publishing exchange the GitHub OIDC token instead of
+  # using a stored npm token.
+  id-token: write
 
 jobs:
   build-test-publish:
@@ -156,6 +159,8 @@ jobs:
       - name: Publish to NPM
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
+          # Trusted publishing needs npm 11.5.1 or later.
+          npm install -g npm@latest
           cd wasm
           # Try a normal publish first; if it fails (e.g. first-time publish of a
           # scoped package), retry with --access public.
@@ -165,6 +170,4 @@ jobs:
             echo "'npm publish' failed, retrying with --access public..."
             npm publish --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
