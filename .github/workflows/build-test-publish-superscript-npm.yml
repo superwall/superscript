@@ -133,7 +133,7 @@ jobs:
       
       # Version management and publishing
       - name: Check for version changes
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         id: version_check
         run: |
           cd wasm
@@ -159,17 +159,17 @@ jobs:
           fi
       
       - name: Publish to NPM
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         run: |
           # Trusted publishing needs npm 11.5.1 or later.
           npm install -g npm@^11.5.1
           cd wasm
           # Try a normal publish first; if it fails (e.g. first-time publish of a
           # scoped package), retry with --access public.
-          if npm publish; then
+          if npm publish --loglevel verbose; then
             echo "Published successfully with 'npm publish'"
           else
             echo "'npm publish' failed, retrying with --access public..."
-            npm publish --access public
+            npm publish --access public --loglevel verbose
           fi
       
