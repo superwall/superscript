@@ -100,14 +100,26 @@ cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-ap
 SDKROOT="$(xcrun --sdk xrsimulator --show-sdk-path)" \
 cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-visionos-sim --lib --release
 
-# For watchOS device
+# For watchOS device. Watches up to Series 8 run arm64_32, newer ones arm64,
+# and Xcode builds watch apps for both.
 SDKROOT="$(xcrun --sdk watchos --show-sdk-path)" \
 cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=arm64_32-apple-watchos --lib --release
+SDKROOT="$(xcrun --sdk watchos --show-sdk-path)" \
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-watchos --lib --release
 # For watchOS simulator
 SDKROOT="$(xcrun --sdk watchsimulator --show-sdk-path)" \
 cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-watchos-sim --lib --release
 SDKROOT="$(xcrun --sdk watchsimulator --show-sdk-path)" \
 cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=x86_64-apple-watchos-sim --lib --release
+
+# For tvOS device
+SDKROOT="$(xcrun --sdk appletvos --show-sdk-path)" \
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-tvos --lib --release
+# For tvOS simulator
+SDKROOT="$(xcrun --sdk appletvsimulator --show-sdk-path)" \
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-tvos-sim --lib --release
+SDKROOT="$(xcrun --sdk appletvsimulator --show-sdk-path)" \
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=x86_64-apple-tvos --lib --release
 
 
 # Rename *.modulemap to module.modulemap
@@ -121,6 +133,7 @@ mkdir -p ./target/ios/release/
 mkdir -p ./target/macos/release/
 mkdir -p ./target/visionos/release/
 mkdir -p ./target/watchos/release/
+mkdir -p ./target/tvos/release/
 
 # Clean up previous build artifacts
 rm -rf ./target/xcframeworks
@@ -134,6 +147,8 @@ mkdir -p ./target/xcframeworks/headers/visionos-simulator/celFFI
 mkdir -p ./target/xcframeworks/headers/visionos-device/celFFI
 mkdir -p ./target/xcframeworks/headers/watchos-simulator/celFFI
 mkdir -p ./target/xcframeworks/headers/watchos-device/celFFI
+mkdir -p ./target/xcframeworks/headers/tvos-simulator/celFFI
+mkdir -p ./target/xcframeworks/headers/tvos-device/celFFI
 
 # Copy headers into celFFI subdirectory
 cp -R ./target/ios/* ./target/xcframeworks/headers/ios-simulator/celFFI/
@@ -144,6 +159,8 @@ cp -R ./target/ios/* ./target/xcframeworks/headers/visionos-simulator/celFFI/
 cp -R ./target/ios/* ./target/xcframeworks/headers/visionos-device/celFFI/
 cp -R ./target/ios/* ./target/xcframeworks/headers/watchos-simulator/celFFI/
 cp -R ./target/ios/* ./target/xcframeworks/headers/watchos-device/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/tvos-simulator/celFFI/
+cp -R ./target/ios/* ./target/xcframeworks/headers/tvos-device/celFFI/
 
 # iOS Simulator (combined arm64 and x86_64)
 echo "Preparing iOS Simulator library (universal binary)"
@@ -195,11 +212,27 @@ lipo -create ./target/aarch64-apple-watchos-sim/release/libcel_eval.a \
     -output ./target/xcframeworks/watchos-simulator/libcel.a
 strip -x ./target/xcframeworks/watchos-simulator/libcel.a
 
-# watchOS Device (arm64)
-echo "Preparing watchOS Device library"
+# watchOS Device (combined arm64_32 and arm64)
+echo "Preparing watchOS Device library (universal binary)"
 mkdir -p ./target/xcframeworks/watchos-device
-cp ./target/arm64_32-apple-watchos/release/libcel_eval.a ./target/xcframeworks/watchos-device/libcel.a
+lipo -create ./target/arm64_32-apple-watchos/release/libcel_eval.a \
+    ./target/aarch64-apple-watchos/release/libcel_eval.a \
+    -output ./target/xcframeworks/watchos-device/libcel.a
 strip -x ./target/xcframeworks/watchos-device/libcel.a
+
+# tvOS Simulator (combined arm64 and x86_64)
+echo "Preparing tvOS Simulator library (universal binary)"
+mkdir -p ./target/xcframeworks/tvos-simulator
+lipo -create ./target/aarch64-apple-tvos-sim/release/libcel_eval.a \
+    ./target/x86_64-apple-tvos/release/libcel_eval.a \
+    -output ./target/xcframeworks/tvos-simulator/libcel.a
+strip -x ./target/xcframeworks/tvos-simulator/libcel.a
+
+# tvOS Device (arm64)
+echo "Preparing tvOS Device library"
+mkdir -p ./target/xcframeworks/tvos-device
+cp ./target/aarch64-apple-tvos/release/libcel_eval.a ./target/xcframeworks/tvos-device/libcel.a
+strip -x ./target/xcframeworks/tvos-device/libcel.a
 
 echo "Building XCFramework"
 xcodebuild -create-xcframework \
@@ -211,6 +244,8 @@ xcodebuild -create-xcframework \
     -library ./target/xcframeworks/visionos-device/libcel.a -headers ./target/xcframeworks/headers/visionos-device \
     -library ./target/xcframeworks/watchos-simulator/libcel.a -headers ./target/xcframeworks/headers/watchos-simulator \
     -library ./target/xcframeworks/watchos-device/libcel.a -headers ./target/xcframeworks/headers/watchos-device \
+    -library ./target/xcframeworks/tvos-simulator/libcel.a -headers ./target/xcframeworks/headers/tvos-simulator \
+    -library ./target/xcframeworks/tvos-device/libcel.a -headers ./target/xcframeworks/headers/tvos-device \
     -output ./target/xcframeworks/libcel.xcframework
 
 echo "XCFramework built at ./target/xcframeworks/libcel.xcframework"
