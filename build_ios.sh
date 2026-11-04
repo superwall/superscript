@@ -93,6 +93,10 @@ do
     cargo build --target=$TARGET --lib --release
 done
 
+# For iOS device, arm64e (pointer authentication, used by apps with Enhanced Security)
+SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)" \
+cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=arm64e-apple-ios --lib --release
+
 # For visionOS device
 SDKROOT="$(xcrun --sdk xros --show-sdk-path)" \
 cargo +nightly build -Zbuild-std=std,core,alloc,panic_unwind --target=aarch64-apple-visionos --lib --release
@@ -153,10 +157,12 @@ lipo -create ./target/aarch64-apple-ios-sim/release/libcel_eval.a \
     -output ./target/xcframeworks/ios-simulator/libcel.a
 strip -x ./target/xcframeworks/ios-simulator/libcel.a
 
-# iOS Device (arm64)
-echo "Preparing iOS Device (arm64) library"
+# iOS Device (combined arm64 and arm64e)
+echo "Preparing iOS Device library (universal binary)"
 mkdir -p ./target/xcframeworks/ios-device
-cp ./target/aarch64-apple-ios/release/libcel_eval.a ./target/xcframeworks/ios-device/libcel.a
+lipo -create ./target/aarch64-apple-ios/release/libcel_eval.a \
+    ./target/arm64e-apple-ios/release/libcel_eval.a \
+    -output ./target/xcframeworks/ios-device/libcel.a
 strip -x ./target/xcframeworks/ios-device/libcel.a
 
 # macOS (combined arm64 and x86_64)
