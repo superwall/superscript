@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.0.18
+
+The evaluator is unchanged from 1.0.17.
+
+### Enhancements
+
+- The iOS package adds tvOS, and its watchOS build now runs on Apple Watch Series 9 and later. Before, watch apps failed to link because the watchOS build only had the architecture of older watches.
+
 ## 1.0.17
 
 The evaluator is unchanged from 1.0.16.
